@@ -43,7 +43,8 @@ checks them like any other mod. NOTCH does not need Blueprinter: it runs the sam
 
 Requires BepInEx 5. Tested with BepInEx 5.4.23.6 and Nuclear Option 0.34.6.
 
-1. Put `NOTCH.dll` in `BepInEx/plugins/NOTCH/`: in the game folder for players, in the dedicated server folder
+1. Download `NOTCH.dll` from the [Releases](https://github.com/skyraze/NOTCH-ModFileCheck/releases) page and put it in
+   `BepInEx/plugins/NOTCH/`: in the game folder for players, in the dedicated server folder
    for servers.
 2. Start once. The settings file `BepInEx/config/com.skyraze.notch.cfg` is created.
 
@@ -313,7 +314,7 @@ The server files are plain text and can be edited by hand. Edits apply from the 
 
 ## Reporting a problem
 
-Open an issue in the **Issues** tab of this repository on GitHub. Please include:
+[Open an issue](https://github.com/skyraze/NOTCH-ModFileCheck/issues/new/choose) on GitHub. Please include:
 
 - what you did and what you expected;
 - the NOTCH version, from the first NOTCH line in the log;
