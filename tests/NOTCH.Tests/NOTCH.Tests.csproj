@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Tests for NOTCH's pure logic. Compiles the same source files as the plugin (no game or BepInEx needed). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\NOTCH\ModEntry.cs" />
+    <Compile Include="..\..\src\NOTCH\WireMod.cs" />
+    <Compile Include="..\..\src\NOTCH\ModCompare.cs" />
+    <Compile Include="..\..\src\NOTCH\PlayerNote.cs" />
+    <Compile Include="..\..\src\NOTCH\CheckReport.cs" />
+    <Compile Include="..\..\src\NOTCH\RuleOverrides.cs" />
+    <Compile Include="..\..\src\NOTCH\Panel\PanelData.cs" />
+    <Compile Include="..\..\src\NOTCH\Admin\AdminList.cs" />
+  </ItemGroup>
+</Project>

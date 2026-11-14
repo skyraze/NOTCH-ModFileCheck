@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Your own install path goes in GameDir.user.props (git-ignored). Falls back to the default Steam path. -->
+  <Import Project="GameDir.user.props" Condition="Exists('GameDir.user.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>NOTCH</AssemblyName>
+    <RootNamespace>NOTCH</RootNamespace>
+    <Version>0.11.3</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option</GameDir>
+    <ManagedDir>$(GameDir)\NuclearOption_Data\Managed</ManagedDir>
+  </PropertyGroup>
+
+  <Target Name="CheckGameDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(ManagedDir)\Assembly-CSharp.dll')"
+           Text="Nuclear Option not found at '$(GameDir)'. Set GameDir in GameDir.user.props." />
+  </Target>
+
+  <ItemGroup>
+    <!-- BepInEx 5 + HarmonyX, from the BepInEx NuGet feed. Compile-time only. -->
+    <PackageReference Include="BepInEx.Core" Version="5.4.*" PrivateAssets="all" />
+    <!-- Makes private game members usable at compile time. Works on your local copy; nothing from the game is shipped. -->
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.*" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Game code, read straight from your install. Private=false: never copied into the build output. -->
+    <Reference Include="$(ManagedDir)\Assembly-CSharp.dll" Publicize="true" Private="false" />
+    <Reference Include="$(ManagedDir)\Mirage.dll" Publicize="true" Private="false" />
+    <Reference Include="$(ManagedDir)\Mirage.*.dll" Private="false" />
+    <Reference Include="$(ManagedDir)\UniTask*.dll" Private="false" />
+    <Reference Include="$(ManagedDir)\com.rlabrecque.steamworks.net.dll" Private="false" />
+    <!-- Rewired = the game's input library. Used only to pause game input while the join notice is open. -->
+    <Reference Include="$(ManagedDir)\Rewired_Core.dll" Private="false" />
+    <Reference Include="$(ManagedDir)\UnityEngine.dll" Private="false" />
+    <Reference Include="$(ManagedDir)\UnityEngine.*.dll" Private="false" />
+  </ItemGroup>
+
+</Project>
