@@ -81,6 +81,23 @@ namespace NOTCH
             }
         }
 
+        /// <summary>
+        /// One short line for the game's disconnect box, which does not wrap text: a long line runs out of the box.
+        /// Says only what to fix, e.g. "Missing Blueprinter v2.1.1". The full wording stays in Describe().
+        /// </summary>
+        public string Short()
+        {
+            string name = Name != null && Name.Length > 40 ? Name.Substring(0, 39) + "…" : Name;
+            switch (Kind)
+            {
+                case ProblemKind.MissingRequired: return ServerVersion.Length > 0 ? $"Missing {name} v{ServerVersion}" : $"Missing {name}";
+                case ProblemKind.Banned:         return $"{name} is not allowed here";
+                case ProblemKind.HashMismatch:   return $"{name} v{ServerVersion}: file differs, reinstall it";
+                case ProblemKind.Unlisted:       return $"{name} {ClientVersion}: not on this server".Replace("  ", " ");
+                default:                         return $"{name}: need v{ServerVersion}, you have v{ClientVersion}";
+            }
+        }
+
         /// <summary>What is wrong, server next to client, and what to do about it.</summary>
         public string Describe()
         {

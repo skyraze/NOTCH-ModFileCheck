@@ -373,7 +373,7 @@ namespace NOTCH
             RuleStore.SetBanned(mod.Guid, mod.Name, word == "ban");
             RefreshBanCommand();
             string shown = string.IsNullOrEmpty(mod.Name) ? mod.Guid : mod.Name;
-            Plugin.Log.LogInfo($"[banned] {who} set {shown} ({mod.Guid}) to '{word}'.");
+            Plugin.Log.LogInfo($"[banned] {who} set {(shown == mod.Guid ? shown : $"{shown} ({mod.Guid})")} to '{word}'.");   // banned by ID with no copy here: the ID is all we have
             if (word == "allow") return Good($"{shown} is no longer banned. Applies from the next join.");
             return Good($"{shown} is now BANNED: a player who has it, in any version, can't join. Applies from the next join." +
                         (known != null && known.Origin == ModOrigin.Loaded ? $" Note: this server runs {known.Name} itself." : ""));

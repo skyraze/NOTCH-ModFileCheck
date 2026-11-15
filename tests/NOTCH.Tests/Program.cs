@@ -56,11 +56,23 @@ var three = Run(new[] { S("a", "1.0.0"), S("b", "2.0.0", H1) }, new[] { C("a", "
 Check("notice header counts the problems", PlayerNote.Header(3) == "3 mod problems on this server:");
 Check("one problem is singular", PlayerNote.Header(1) == "1 mod problem on this server:");
 string refusal = PlayerNote.Refusal(three);
-Check("refusal: header plus one line per problem, says fix and rejoin", refusal.Split('\n').Length == 4 && refusal.Contains("fix and rejoin"));
+Check("refusal: header plus one line per problem", refusal.Split('\n').Length == 4 && refusal.StartsWith("[NOTCH] Can't join server. 3 problems detected\n"));
+Check("refusal: one problem is singular", PlayerNote.Refusal(three.Take(1).ToList()).StartsWith("[NOTCH] Can't join server. 1 problem detected\n"));
+var mixedOrder = new List<Problem> {
+    new Problem { Kind = ProblemKind.Unlisted, Name = "U", ClientVersion = "1.0.0", ServerVersion = "" },
+    new Problem { Kind = ProblemKind.HashMismatch, Name = "H", ClientVersion = "1.0.0", ServerVersion = "1.0.0" },
+    new Problem { Kind = ProblemKind.VersionOlder, Name = "V", ClientVersion = "1.0.0", ServerVersion = "1.1.0" },
+    new Problem { Kind = ProblemKind.MissingRequired, Name = "R", ClientVersion = "", ServerVersion = "2.0.0" },
+    new Problem { Kind = ProblemKind.Banned, Name = "B", ClientVersion = "1.0.0", ServerVersion = "" } };
+string[] ordered = PlayerNote.Refusal(mixedOrder).Split('\n');
+Check("refusal: most serious first (banned, required, version) and the other two only counted", ordered.Length == 4 && ordered[0] == "[NOTCH] Can't join server. 5 problems detected, showing 3" && ordered[1] == "B is not allowed here" && ordered[2] == "Missing R v2.0.0" && ordered[3].StartsWith("V: need v1.1.0"));
 var many = Enumerable.Range(0, 9).Select(i => C("x" + i, "1.0.0")).ToArray();
 string capped = PlayerNote.Refusal(Run(new ModEntry[0], many));
-Check("long refusals are cut: 6 listed, then '…and 3 more.'", capped.Split('\n').Length == 8 && capped.EndsWith("…and 3 more."));
+Check("long refusals never exceed 4 lines: header says 9, showing 3", capped.Split('\n').Length == 4 && capped.StartsWith("[NOTCH] Can't join server. 9 problems detected, showing 3\n"));
 Check("no-NOTCH refusal says to install NOTCH", PlayerNote.NoNotchRefusal.Contains("Install NOTCH"));
+Check("refusal lines fit the game's box, which does not wrap (80 characters)", refusal.Split('\n').Concat(capped.Split('\n')).Concat(PlayerNote.NoNotchRefusal.Split('\n')).All(l => l.Length <= 80));
+Check("refusal: a missing required mod reads 'Missing <name> v<version>'", new Problem { Kind = ProblemKind.MissingRequired, Name = "Blueprinter", ServerVersion = "2.1.1", ClientVersion = "" }.Short() == "Missing Blueprinter v2.1.1");
+Check("refusal: a very long mod name is cut so the line still fits", new Problem { Kind = ProblemKind.MissingRequired, Name = new string('x', 120), ServerVersion = "1.0.0", ClientVersion = "" }.Short().Length <= 80);
 
 // --- A problem survives the trip server -> client unchanged ---
 Check("problem text is identical after the wire round trip", three.All(p => Problem.FromWire(p.ToWire()).Describe() == p.Describe()));

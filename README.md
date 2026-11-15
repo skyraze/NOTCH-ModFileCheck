@@ -6,8 +6,8 @@ A BepInEx 5 plugin for [Nuclear Option](https://store.steampowered.com/app/21686
 that runs NOTCH asks each joining player which mods they have, compares the answer with its own, and either tells
 the player what doesn't match or refuses the join.
 
-> **Beta.** Everything described here is built and has been tested on a local dedicated server with one player.
-> It has not yet been tested with several players at once or on a remote server. See *Reporting a problem*.
+> **Beta.** Everything described here works and has been tested in game on a dedicated server, including with
+> Blueprinter content. It has not yet been tested with several players at once. See *Reporting a problem*.
 
 NOTCH is optional. It does not replace BepInEx or a mod manager, and a server without it works as before.
 It is an honor-system tool, not anti-cheat (see *Limits*).
@@ -24,6 +24,7 @@ checks them like any other mod. NOTCH does not need Blueprinter: it runs the sam
 - [For server managers](#for-server-managers)
   - [The join check](#the-join-check)
   - [Blueprinter](#blueprinter)
+  - [NOMM and NOSMR](#nomm-and-nosmr)
   - [Client mods the server can't run](#client-mods-the-server-cant-run)
   - [Required mods](#required-mods)
   - [Per-mod rules](#per-mod-rules)
@@ -118,12 +119,22 @@ OtherMod 2.0.0: file differs (server 7e4d2ff5fcef…, you 27522f655566…). Veri
 ThirdMod 1.2.5: not on this server.
 ```
 
-A refused player gets the same lines as the reason for the disconnect. If there is nothing to report, the player
-sees nothing.
+A refused player sees the reason in the game's own disconnect box. That box is small, so it shows a count and the
+three most serious problems, in short form:
+
+```
+[NOTCH] Can't join server. 4 problems detected, showing 3
+BadMod is not allowed here
+Missing SomeJet v1.2.0
+SomeMod: need v1.1.0, you have v1.0.0
+```
+
+A player without NOTCH is told `This server requires the NOTCH mod. Install NOTCH and rejoin.` If there is
+nothing to report, the player sees nothing.
 
 **What you see.** Each join is summarised in the server's log, with a hint on how to allow a mod the server
-doesn't know. The player's own report file, `BepInEx/NOTCH/notch-checks.yaml`, holds the full file hashes and the
-path of their copy of each mod, so ask for it when someone needs help.
+doesn't know. The player's own report file, `BepInEx/NOTCH/notch-checks.yaml`, holds every problem, the full file
+hashes and the path of their copy of each mod, so ask for it when someone needs help.
 
 ### Blueprinter
 
@@ -146,6 +157,16 @@ version on its download page. A loose `.nobp` file's name and version are read f
 **Dedicated servers.** In our testing (Blueprinter 2.1.1, game 0.34.6), a dedicated server with Blueprinter
 content installed did not finish starting until `SkipAdditionalAssets = true` was set in
 `BepInEx/config/com.nikkorap.blueprinter.cfg` on the server. This happens with or without NOTCH.
+
+### NOMM and NOSMR
+
+NOTCH works alongside [NOMM](https://github.com/Combat787/NOMM) and its server plugin NOSMR, and does a different
+job. NOSMR tells NOMM which mods a server runs, so players can get them before joining. NOTCH checks what a player
+actually has when they join.
+
+If you use both, keep them in step. When a player joins through NOMM, NOMM switches their mods to match the pack
+your server broadcasts. A mod that NOTCH requires but your NOMM pack leaves out gets switched off, and NOTCH then
+refuses the player for not having it. After changing your server's mods, export a fresh pack.
 
 ### Client mods the server can't run
 
