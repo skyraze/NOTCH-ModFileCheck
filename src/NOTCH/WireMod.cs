@@ -23,15 +23,7 @@ namespace NOTCH.Net
         public bool Required;                   // the problem is about a mod the server requires
     }
 
-    /// <summary>
-    /// Every piece of text that arrives over the network goes through Clean before NOTCH does anything with it.
-    /// NOTCH never runs, loads or downloads anything it is sent — text is only compared, shown and written to its
-    /// own files — but text can still be used to mislead. So on arrival:
-    ///   - control characters and line breaks become a space (no fake lines in a log, a file or the notice);
-    ///   - characters that reorder text on screen are dropped (a name can't be made to read backwards);
-    ///   - &lt; and &gt; become look-alikes (the game's text boxes treat &lt;tags&gt; as formatting);
-    ///   - anything longer than MaxLength is cut.
-    /// </summary>
+    /// <summary>Cleans every piece of text that arrives over the network before NOTCH uses it.</summary>
     public static class SafeText
     {
         public const int MaxLength = 160;

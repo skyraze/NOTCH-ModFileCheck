@@ -2,8 +2,7 @@ using System.Collections.Generic;
 
 namespace NOTCH.Panel
 {
-    // What travels between the server and an admin's NOTCH menu. Plain data and pure logic only (no game, network
-    // or UI types), so the "what will happen" text shown in the menu is covered by notch/tests.
+    // What travels between the server and an admin's NOTCH menu. Plain data and pure logic.
 
     /// <summary>One row of the Mods tab.</summary>
     public struct PanelMod
@@ -60,10 +59,7 @@ namespace NOTCH.Panel
             }
         }
 
-        /// <summary>
-        /// "What happens to a player now", for one row with the given settings. Built on ModCompare.Blocks, so the
-        /// menu can never say something different from what the join check does.
-        /// </summary>
+        /// <summary>"What happens to a player now" for one row. Built on ModCompare.Blocks.</summary>
         public static string Result(JoinPolicy policy, bool reportUnlisted, byte where, bool required, byte rule, bool banned)
         {
             if (policy == JoinPolicy.Off) return "not checked (policy Off)";

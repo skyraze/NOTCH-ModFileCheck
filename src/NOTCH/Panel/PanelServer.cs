@@ -14,14 +14,7 @@ using Steamworks;
 
 namespace NOTCH.Panel
 {
-    /// <summary>
-    /// Server side of the NOTCH menu: builds what an admin's menu shows, and carries out the changes it sends back.
-    /// Every request is checked again here — the sender must have the game's Admin level (or be the host) — because
-    /// a message can be sent by any client, whatever its own menu shows.
-    ///
-    /// Mods, Server and Admins use NOTCH's own files and settings. Player bans use the GAME's ban list and kick code
-    /// (not part of the official ModdingApi), so a ban made here is an ordinary game ban that works without NOTCH.
-    /// </summary>
+    /// <summary>Server side of the menu: builds what it shows and carries out its requests. Every request is re-checked for Admin level.</summary>
     internal static class PanelServer
     {
         /// <summary>/notch-menu: send the current state to that admin; their game opens the menu.</summary>

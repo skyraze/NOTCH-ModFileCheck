@@ -3,11 +3,7 @@ using System.Linq;
 
 namespace NOTCH.Admin
 {
-    /// <summary>
-    /// Reads and edits the text of admins.txt: one Steam ID per line, "#" starts a comment (whole line or after
-    /// the ID), blank lines ignored — the same shape as the game's ban list. Pure text in, text out (no file
-    /// access), so it is covered by notch/tests.
-    /// </summary>
+    /// <summary>Reads and edits the text of admins.txt (one Steam ID per line). Pure text.</summary>
     public static class AdminList
     {
         public const string FileName = "admins.txt";
@@ -33,10 +29,7 @@ namespace NOTCH.Admin
             return ids;
         }
 
-        // A SteamID64 is a number with fixed parts: which Steam it belongs to, what kind of account it is, and the
-        // account's own number. A player's account always falls in this range (public Steam, individual account).
-        // Checking the range — not the leading digits — keeps newer accounts valid: their IDs run past 7656119…
-        // into 7656120…. Game-server and group IDs fall outside it, and are not people who can be admins.
+        // A player's SteamID64 always falls in this range. Checking the range keeps newer accounts valid.
         public const ulong FirstPlayerId = 76561197960265728;      // account number 0
         public const ulong LastPlayerId = 76561202255233023;       // account number 4,294,967,295
 

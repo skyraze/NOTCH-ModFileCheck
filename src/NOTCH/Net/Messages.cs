@@ -6,9 +6,8 @@ using NOTCH.Panel;
 
 namespace NOTCH.Net
 {
-    // The NOTCH network messages: three for the join check, two for the admin menu. The type names are part of the protocol: Mirage turns the full name
-    // ("NOTCH.Net.NotchInterrogateV1") into the 16-bit message id, so renaming a struct breaks compatibility.
-    // A changed layout gets a new struct (…V2), never an edit to these.
+    // NOTCH's network messages. The type names are part of the protocol: never rename one.
+    // A changed layout gets a new struct (…V2).
 
     /// <summary>Server → joining client: "tell me your mods". Carries what the server knows.</summary>
     public struct NotchInterrogateV1
@@ -59,17 +58,13 @@ namespace NOTCH.Net
         public PanelAction[] Actions;
     }
 
-    // Reading: every string goes through SafeText.Clean, and every list has a size limit. Nothing that is read is
-    // ever run, loaded or used as a file path.
+    // Reading: every string goes through SafeText.Clean and every list has a size limit.
     internal static class Wire
     {
         public const byte ProtocolVersion = 1;
         public const int MaxMods = 1000;        // a list longer than this is treated as garbage
 
-        /// <summary>
-        /// Tells Mirage how to write and read our messages, and makes sure their ids don't clash with a game message.
-        /// Returns false (and NOTCH stays passive) if they do.
-        /// </summary>
+        /// <summary>Registers the messages with Mirage. Returns false if an id clashes with a game message.</summary>
         public static bool Register(ManualLogSource log)
         {
             Writer<NotchInterrogateV1>.Write = (w, m) =>

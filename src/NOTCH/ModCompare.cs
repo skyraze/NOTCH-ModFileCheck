@@ -18,10 +18,7 @@ namespace NOTCH
         RequireMatch = 3,
     }
 
-    /// <summary>
-    /// The server manager's choice for ONE mod: what happens when a player has it in a version or file that does
-    /// not match. Set with /notch-rule. With no rule, the policy decides (see ModCompare.Blocks).
-    /// </summary>
+    /// <summary>What a version or file mismatch on one mod costs. Set with /notch-rule.</summary>
     public enum MismatchRule
     {
         /// <summary>A mismatch refuses the join.</summary>
@@ -81,10 +78,7 @@ namespace NOTCH
             }
         }
 
-        /// <summary>
-        /// One short line for the game's disconnect box, which does not wrap text: a long line runs out of the box.
-        /// Says only what to fix, e.g. "Missing Blueprinter v2.1.1". The full wording stays in Describe().
-        /// </summary>
+        /// <summary>One short line for the game's disconnect box, which does not wrap text.</summary>
         public string Short()
         {
             string name = Name != null && Name.Length > 40 ? Name.Substring(0, 39) + "…" : Name;
@@ -115,16 +109,7 @@ namespace NOTCH
         }
     }
 
-    /// <summary>
-    /// The comparison itself. Pure logic: lists in, problems out. No game, network or file access,
-    /// so it can be tested on its own (notch/tests).
-    ///
-    /// Three layers decide the outcome for a mod:
-    ///   1. the mod's author: who needs it (ModEntry.Required, via RequiredRules) and which older versions the
-    ///      server's copy accepts (ModEntry.CompatibleFrom);
-    ///   2. the server's policy: what a mismatch costs when nothing else says (Blocks);
-    ///   3. the server manager, per mod: /notch-require, /notch-rule, /notch-ban — these win.
-    /// </summary>
+    /// <summary>The comparison: lists in, problems out. Pure logic. Overview in docs/CODE-GUIDE.md.</summary>
     public static class ModCompare
     {
         /// <param name="known">The server's known set.</param>
@@ -165,9 +150,7 @@ namespace NOTCH
                 int order = CompareVersions(s.Version, c.Version, out bool comparable);   // <0 client older, >0 client newer
                 bool sameVersion = comparable ? order == 0 : string.Equals(Clean(s.Version), Clean(c.Version), StringComparison.OrdinalIgnoreCase);
 
-                // The SERVER's copy decides which other versions are fine, and only downward: a copy labelled
-                // "compatible from 1.15" accepts 1.15 up to its own version. Nothing newer than the server's copy
-                // is accepted by a label — that copy cannot know about versions made after it.
+                // The server's copy decides which older versions are accepted. Nothing newer than it is.
                 bool accepted = sameVersion
                     || (comparable && order < 0 && Version.TryParse(Clean(s.CompatibleFrom), out Version from)
                         && Version.TryParse(Clean(c.Version), out Version theirVersion) && theirVersion >= from);
@@ -196,8 +179,7 @@ namespace NOTCH
                 }
             }
 
-            // Required mods the player does not have at all. (One they have in the wrong version is already listed above.)
-            // A rule of "off" stops the comparison, not the need to have the mod.
+            // Required mods the player does not have at all. A rule of "off" does not lift this.
             foreach (ModEntry s in server.Where(e => e.Required))
                 if (!theirs.Any(c => c.Kind == (byte)s.Kind && string.Equals(c.Guid, s.Guid, StringComparison.OrdinalIgnoreCase)))
                     problems.Add(new Problem { Kind = ProblemKind.MissingRequired, Guid = s.Guid, Name = s.Name, ServerVersion = s.Version ?? "", ServerHash = s.Sha256 ?? "", Required = true });

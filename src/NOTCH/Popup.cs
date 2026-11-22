@@ -7,12 +7,7 @@ using UnityEngine.UI;
 
 namespace NOTCH
 {
-    /// <summary>
-    /// The warning a player sees after joining a server where some of their mods don't match.
-    /// Drawn with Unity's built-in immediate-mode UI (the same kind Configuration Manager uses): no art assets,
-    /// nothing taken from the game's own UI. It appears once the match screen exists, stays until Close is
-    /// clicked, and goes away by itself if the player leaves the server. Nothing to tell = no popup.
-    /// </summary>
+    /// <summary>The notice a player sees after joining when some of their mods don't match. Unity IMGUI.</summary>
     internal static class Popup
     {
         private static string serverName = "";
@@ -41,16 +36,10 @@ namespace NOTCH
             ReleaseInput();
         }
 
-        /// <summary>
-        /// While the notice is open the game must not react to keys or the mouse wheel (the map zooming, M closing
-        /// the map and taking the mouse pointer with it). This does what the game's own chat box does while you type:
-        /// switch off the keyboard and mouse control maps, keep the mouse pointer visible, and block the pause key.
-        /// </summary>
+        /// <summary>Keeps the game from reacting to keys and the mouse while the notice is open.</summary>
         private static void HoldInput()
         {
-            // Runs every frame while something of ours is open. The game's chat box switches every control map
-            // back ON a moment after it closes (and a menu command is typed in chat), so one pass is not enough:
-            // each frame, anything that is enabled is switched off and remembered.
+            // Runs every frame: the game's chat box switches the control maps back on after it closes.
             bool first = !inputHeld;
             inputHeld = true;
             try
@@ -85,12 +74,7 @@ namespace NOTCH
             GameplayUI.AllowPauseKeybind = pauseKeyWas;
         }
 
-        /// <summary>
-        /// The popup is drawn on top of the game's menus, but on its own it does not stop a click from also
-        /// reaching the game button underneath. While the popup is open, an invisible full-screen sheet sits
-        /// above all of the game's menus and swallows those clicks; it is removed when the popup closes.
-        /// It also dims the screen slightly, so it is clear the popup has to be closed first.
-        /// </summary>
+        /// <summary>An invisible full-screen sheet that swallows clicks meant for the game's menus.</summary>
         private static void EnsureBlocker()
         {
             if (blocker != null) return;

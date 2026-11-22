@@ -12,15 +12,7 @@ namespace NOTCH.Admin
     /// <summary>Whether NOTCH manages admins itself.</summary>
     public enum AdminMode { Auto, On, Off }
 
-    /// <summary>
-    /// NOTCH's basic admin management. The game has permission levels (Player, Moderator, Admin, Host) but no way
-    /// to give one to a player; this does the minimum: players listed in admins.txt get the game's Admin level
-    /// when they join. Rules:
-    ///   - only ever RAISES a level, so it can't fight another mod over who is admin;
-    ///   - never touches the Host;
-    ///   - steps aside entirely when a known admin mod is loaded (AdminManagement = Auto) or when set to Off.
-    /// Uses only the game's official ModdingApi (PlayerHandle).
-    /// </summary>
+    /// <summary>Gives players listed in admins.txt the game's Admin level. Only raises a level, never touches the Host.</summary>
     internal static class AdminManager
     {
         internal static bool Active { get; private set; }

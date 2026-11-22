@@ -1,7 +1,4 @@
-// NOTCH — Nuclear Option Transponder Check Handshake
-// Build step 2b.2: find every mod, build the "known set", report; a NOTCH server asks a joining client
-// for its mod list, compares it with the known set and tells the client the result.
-// What happens to the player depends on Server/Policy (see JoinPolicy).
+// NOTCH — Nuclear Option Transponder Check Handshake. Overview of the code: docs/CODE-GUIDE.md
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -83,8 +80,7 @@ namespace NOTCH
                 "get the game's Admin level when they join. It only ever raises a level. " +
                 "Auto = on, unless a known admin mod is loaded. On = always on. Off = NOTCH leaves admins alone.");
 
-            // Any game that runs NOTCH and hosts is a modded server: this lights the game's own "modded" marker
-            // in the server browser. NOTCH only ever sets it to true.
+            // Lights the game's own "modded" marker in the server browser.
             NetworkManagerNuclearOption.ModdedServer = true;
 
             // Debug only: one line whenever the game reports a player joining or leaving, with their permission level.
@@ -189,8 +185,7 @@ namespace NOTCH
                                    $"If one of them is a client mod and misbehaves here, move it to BepInEx/config/{Name}/{NoLoadFolderName}.");
             }
 
-            // Blueprinter: not required by NOTCH, but content mods need it.
-            // Content packs rarely declare the dependency: Blueprinter finds the .nobp packed inside them, they never call it.
+            // Blueprinter is not required by NOTCH, but content mods need it and rarely declare it.
             bool needsBlueprinter = all.Any(x => x.Kind == ModKind.Nobp || x.BlueprinterContent || x.Dependencies.Contains(BlueprinterGuid));
             if (needsBlueprinter && !Chainloader.PluginInfos.ContainsKey(BlueprinterGuid))
             {

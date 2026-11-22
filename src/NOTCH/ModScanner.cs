@@ -10,10 +10,7 @@ using Mono.Cecil;
 
 namespace NOTCH
 {
-    /// <summary>
-    /// Finds mods by reading files as DATA. Nothing here loads or runs another mod's code:
-    /// DLLs are opened with Mono.Cecil (a library reader), everything else is only hashed.
-    /// </summary>
+    /// <summary>Finds mods by reading files as data (Mono.Cecil). Never loads or runs them.</summary>
     internal static class ModScanner
     {
         public const string ClientProcess = "NuclearOption";            // the game client, without ".exe"
@@ -31,8 +28,7 @@ namespace NOTCH
                     using (AssemblyDefinition asm = AssemblyDefinition.ReadAssembly(dll))
                     {
                         string hash = null;
-                        // The author's own label, if any: [assembly: AssemblyMetadata("NotchScope", "RequiresAll")].
-                        // A standard .NET attribute, so a mod can carry it without depending on NOTCH.
+                        // The author's own label, if any: AssemblyMetadata("NotchScope", ...).
                         string scope = asm.CustomAttributes
                             .Where(a => a.AttributeType.FullName == "System.Reflection.AssemblyMetadataAttribute" && a.ConstructorArguments.Count == 2
                                         && string.Equals(a.ConstructorArguments[0].Value as string, "NotchScope", StringComparison.OrdinalIgnoreCase))
@@ -42,8 +38,7 @@ namespace NOTCH
                             .Where(a => a.AttributeType.FullName == "System.Reflection.AssemblyMetadataAttribute" && a.ConstructorArguments.Count == 2
                                         && string.Equals(a.ConstructorArguments[0].Value as string, "NotchCompatibleFrom", StringComparison.OrdinalIgnoreCase))
                             .Select(a => a.ConstructorArguments[1].Value as string).FirstOrDefault() ?? "";
-                        // Blueprinter content packs are usually one plugin DLL with the .nobp bundle packed inside as a resource
-                        // (no loose .nobp file, and no declared dependency on Blueprinter). Only the resource's name is read.
+                        // Blueprinter content: a plugin DLL with the .nobp packed inside as a resource. Only its name is read.
                         bool embedsNobp = asm.MainModule.Resources.Any(r => r.Name != null && r.Name.EndsWith(".nobp", StringComparison.OrdinalIgnoreCase));
                         foreach (TypeDefinition type in asm.MainModule.Types)
                         {

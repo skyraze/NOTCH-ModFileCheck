@@ -5,11 +5,7 @@ using System.Text;
 
 namespace NOTCH
 {
-    /// <summary>
-    /// The player's report file, BepInEx/NOTCH/notch-checks.yaml: the last 10 join checks, newest first.
-    /// It is YAML so Notepad++ colours and folds it, and so a script can read it — but it is meant to be read as text.
-    /// This class only builds text (no file access), so it is covered by notch/tests; Plugin does the reading and writing.
-    /// </summary>
+    /// <summary>Builds the text of the player's report file (notch-checks.yaml). No file access.</summary>
     public static class CheckReport
     {
         public const int MaxChecks = 10;
@@ -81,11 +77,7 @@ namespace NOTCH
             return sb.ToString();
         }
 
-        /// <summary>
-        /// Double-quoted YAML text for names and versions that come from outside (a server or mod name could contain
-        /// anything; an unquoted version "1.10" would be read as the number 1.1). Line breaks and control characters
-        /// become a space, so a strange or hostile name can't break the layout or fake an entry.
-        /// </summary>
+        /// <summary>Double-quoted YAML text; line breaks and control characters become a space.</summary>
         public static string Quote(string s) => "\"" + Flatten(s).Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
         /// <summary>Single-quoted YAML text for file paths: backslashes stay as they are, an apostrophe is doubled.</summary>

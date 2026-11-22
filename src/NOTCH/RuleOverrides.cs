@@ -6,12 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace NOTCH
 {
-    /// <summary>
-    /// The server manager's per-mod rules, kept in BepInEx/config/NOTCH/overrides.yaml: what happens when a player
-    /// has a mod in a version or file that does not match. Admins set them in game with /notch-rule; the file is
-    /// plain text and can be edited by hand too. One line per mod:   "plugin.id": kick   # Mod Name
-    /// Pure text in, text out (no file access), so it is covered by notch/tests.
-    /// </summary>
+    /// <summary>Text of overrides.yaml: the per-mod mismatch rules. Pure text in, text out.</summary>
     public static class RuleOverrides
     {
         public const string FileName = "overrides.yaml";
@@ -59,10 +54,7 @@ namespace NOTCH
         public static string Key(string guid) => (guid ?? "").Trim().ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Mods nobody may join with, in any version: BepInEx/config/NOTCH/banned.yaml, set with /notch-ban.
-    /// One line per mod:   "plugin.id": banned   # Mod Name.   Pure text, covered by notch/tests.
-    /// </summary>
+    /// <summary>Text of banned.yaml: mods nobody may join with. Pure text.</summary>
     public static class BannedList
     {
         public const string FileName = "banned.yaml";
@@ -101,16 +93,7 @@ namespace NOTCH
         }
     }
 
-    /// <summary>
-    /// Which mods every joining player must have ("RequiresAll"). Decided per mod, first match wins:
-    ///   1. the server manager's choice (required.yaml, set with /notch-require);
-    ///   2. the mod author's label: [assembly: AssemblyMetadata("NotchScope", "RequiresAll")] = required,
-    ///      any other label (ClientOnly, ServerOnly…) = not required;
-    ///   3. Blueprinter content (.nobp), Blueprinter itself, and plugins that depend on Blueprinter = required,
-    ///      because they almost always add or change vehicles;
-    ///   4. everything else = not required.
-    /// Steps 2–4 only apply to mods the server actually runs. Pure logic, covered by notch/tests.
-    /// </summary>
+    /// <summary>Which mods every player must have: the manager's choice, then the author's label, then Blueprinter content.</summary>
     public static class RequiredRules
     {
         public const string FileName = "required.yaml";
@@ -186,10 +169,7 @@ namespace NOTCH
         private static string Unescape(string s) => s.Replace("\\\"", "\"").Replace("\\\\", "\\");
     }
 
-    /// <summary>
-    /// Mod names as the game's chat suggestions can show them. A suggestion can't contain a space, so
-    /// "Configuration Manager" becomes "Configuration_Manager". Two mods with the same name get _2, _3…
-    /// </summary>
+    /// <summary>Mod names as chat suggestions: no spaces, and duplicates get _2, _3.</summary>
     public static class ModChoices
     {
         public static List<KeyValuePair<string, ModEntry>> Build(IEnumerable<ModEntry> mods)

@@ -9,13 +9,7 @@ using NuclearOption.ModdingApi;
 
 namespace NOTCH
 {
-    /// <summary>
-    /// The three small files a server manager's per-mod choices are saved in, next to admins.txt:
-    ///   overrides.yaml — what a mismatch costs (kick / warn / off);
-    ///   required.yaml  — mods switched to required / not required;
-    ///   banned.yaml    — mods nobody may join with.
-    /// All are re-read when they change on disk, so a hand edit applies from the next join.
-    /// </summary>
+    /// <summary>The server manager's per-mod files: overrides.yaml, required.yaml, banned.yaml. Re-read when they change.</summary>
     internal static class RuleStore
     {
         internal static Dictionary<string, MismatchRule> Rules { get; private set; } = new Dictionary<string, MismatchRule>();
@@ -113,25 +107,7 @@ namespace NOTCH
             Plugin.KnownSet.FirstOrDefault(e => RuleOverrides.Key(e.Guid) == key)?.Name ?? "";
     }
 
-    /// <summary>
-    /// NOTCH's admin commands. Each action is written once (the Do… methods) and offered two ways:
-    ///
-    /// 1. In the game's chat, through the official ModdingApi. All need the Admin level, so the game hides them
-    ///    from everyone else. A chat command has ONE fixed list of arguments with fixed suggestions, so there are
-    ///    several commands instead of "/notch rule ..." sub-commands — that way the chat box can suggest everything:
-    ///        /notch [status|rules|required|banned|admins]
-    ///        /notch-rule <mod> <kick|warn|off|reset>      what a version / file mismatch on that mod costs
-    ///        /notch-require <mod> <on|off|reset>          whether players must have that mod
-    ///        /notch-ban <mod> <ban|allow>                 nobody may join with that mod, any version
-    ///        /notch-admin <add|remove> <player>
-    ///        /notch-menu                                  opens a window with all of the above (NOTCH.Panel)
-    ///
-    /// 2. On a dedicated server, through the game's remote-command port (start the server with
-    ///    -ServerRemoteCommands; only programs on the server machine can reach it):
-    ///        notch-status, notch-rules, notch-required, notch-banned, notch-admins,
-    ///        notch-rule <mod> <rule>, notch-require <mod> <on|off|reset>, notch-ban <mod or plugin id> <ban|allow>,
-    ///        notch-admin-add <steam id>, notch-admin-remove <steam id>
-    /// </summary>
+    /// <summary>NOTCH's admin commands, offered in chat and as remote commands. The list is in the README.</summary>
     internal static class Commands
     {
         private static List<KeyValuePair<string, ModEntry>> modChoices = new List<KeyValuePair<string, ModEntry>>();
@@ -197,10 +173,7 @@ namespace NOTCH
             catch (Exception e) { Plugin.Log.LogWarning("Could not register NOTCH's remote commands: " + e.Message); }
         }
 
-        /// <summary>
-        /// Called for every joining player's mod list: remembers the mods this server does not know, so an admin can
-        /// pick one in /notch-ban without typing its name. The command's suggestion list is rebuilt when a new one shows up.
-        /// </summary>
+        /// <summary>Remembers mods seen on players that the server does not know, for /notch-ban's suggestions.</summary>
         internal static void NoteClientMods(WireMod[] clientMods)
         {
             bool added = false;
@@ -216,14 +189,7 @@ namespace NOTCH
             if (added) RefreshBanCommand();
         }
 
-        /// <summary>
-        /// (Re)registers /notch-ban with the current list:
-        ///   - mods the server knows but does not run (the Client-Mods-NoLoad folder, and client-only mods BepInEx skipped),
-        ///     so a well-known cheat or broken mod can be banned BEFORE anyone joins with it: drop its file in the folder;
-        ///   - mods seen on players that the server does not know;
-        ///   - mods already banned.
-        /// The game syncs the new list to connected admins. With nothing to offer yet, the command is not shown.
-        /// </summary>
+        /// <summary>(Re)registers /notch-ban with the current list of mods that can be banned.</summary>
         internal static void RefreshBanCommand()
         {
             try

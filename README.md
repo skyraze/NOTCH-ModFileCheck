@@ -17,6 +17,8 @@ checks them like any other mod. NOTCH does not need Blueprinter: it runs the sam
 
 **Writing a mod?** See [docs/FOR-MOD-DEVS.md](docs/FOR-MOD-DEVS.md) and the [examples](examples/) folder.
 
+**Reading the code?** See [docs/CODE-GUIDE.md](docs/CODE-GUIDE.md).
+
 ## Contents
 
 - [Installing](#installing)

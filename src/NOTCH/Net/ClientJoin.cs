@@ -8,10 +8,7 @@ using NuclearOption.Networking.Authentication;
 
 namespace NOTCH.Net
 {
-    /// <summary>
-    /// Client side: when a NOTCH server asks, answer with this machine's mod list.
-    /// The client never sends anything unasked — a server without NOTCH never hears from us.
-    /// </summary>
+    /// <summary>Client side: answers a NOTCH server's request with this machine's mod list. Never sends unasked.</summary>
     internal static class ClientJoin
     {
         /// <summary>What the server we last joined said it knows (kept for the later "host allows" check).</summary>

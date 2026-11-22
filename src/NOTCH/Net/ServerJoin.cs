@@ -14,13 +14,7 @@ using Steamworks;
 
 namespace NOTCH.Net
 {
-    /// <summary>
-    /// Server side of the join exchange. After the game has accepted a player's login, and before it lets them in,
-    /// NOTCH asks the client for its mod list and waits briefly for the answer.
-    /// The answer is compared with the server's known set. What happens next depends on the Policy setting:
-    /// the client is always told the result (its own NOTCH shows a notice). Which problems refuse the join
-    /// is decided by ModCompare.Blocks from the policy and the manager's per-mod choices.
-    /// </summary>
+    /// <summary>Server side: asks a joining client for its mod list, compares it, then admits or refuses by Policy.</summary>
     internal static class ServerJoin
     {
         /// <summary>Players NOTCH is holding inside login right now. Game code is single-threaded, so plain fields are fine.</summary>
@@ -28,8 +22,7 @@ namespace NOTCH.Net
         private static readonly HashSet<INetworkPlayer> waiting = new HashSet<INetworkPlayer>();
         private static readonly Dictionary<INetworkPlayer, NotchTransponderV1> replies = new Dictionary<INetworkPlayer, NotchTransponderV1>();
 
-        // 1) When a server starts: listen for the clients' answers. allowUnauthenticated, because the
-        //    player has not finished logging in yet when they answer (the game's password check does the same).
+        // 1) On server start: listen for answers. allowUnauthenticated, because the player is still logging in.
         [HarmonyPatch(typeof(NetworkAuthenticatorNuclearOption), nameof(NetworkAuthenticatorNuclearOption.OnStartServer))]
         internal static class OnStartServerPatch
         {
@@ -61,8 +54,7 @@ namespace NOTCH.Net
                 if (player == null || player.IsHost || message.JoinAs == PlayerType.DedicatedServer) return;
                 if (Plugin.Policy.Value == JoinPolicy.Off) return;      // Off: no question, no wait
 
-                // Guard 2 (spike 1): remember what the game's Steam player list held for this account before the
-                // game touches it, so it can be put back if the player ends up not getting in.
+                // Guard 2: remember the game's Steam player entry so it can be put back if the player is refused.
                 Action undo = () => { };
                 if (player.ConnectionHandle is SteamConnection steam)
                 {
@@ -182,8 +174,7 @@ namespace NOTCH.Net
             }
         }
 
-        // Guard 1 (spike 1): the game checks every Steam player once a second and assumes each has login data.
-        // A held player has none yet. Skip that tick while anyone is held; it runs again a second later.
+        // Guard 1: skip the game's once-a-second Steam check while a player is held (no login data yet).
         [HarmonyPatch(typeof(NetworkAuthenticatorNuclearOption), nameof(NetworkAuthenticatorNuclearOption.CheckSteamSessionDisconnects))]
         internal static class SessionLoopGuard
         {

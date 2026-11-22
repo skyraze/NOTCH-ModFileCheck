@@ -3,18 +3,10 @@ using System.Linq;
 
 namespace NOTCH
 {
-    /// <summary>
-    /// The text a player reads: the popup after joining, and the refusal reason in the game's disconnect box.
-    /// Pure logic (no game types), so it is covered by notch/tests.
-    /// </summary>
+    /// <summary>The text a player reads: the join notice and the refusal reason. Pure logic.</summary>
     public static class PlayerNote
     {
-        /// <summary>
-        /// The disconnect box is small: it does not wrap text (about 80 characters fit on a line), cannot scroll, and
-        /// has room for FOUR lines — a fifth runs out of the box and over its OK button (seen in game). So the refusal
-        /// is the header plus at most this many problems, most serious first. With more, the header says how many are
-        /// shown; the full list is in the player's report file.
-        /// </summary>
+        /// <summary>Problems listed in a refusal. The game's box holds four lines: the header plus these.</summary>
         public const int MaxListed = 3;
 
         /// <summary>Most serious first: banned, required mod missing, wrong version, different file, unknown mod.</summary>

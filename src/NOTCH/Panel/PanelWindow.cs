@@ -8,16 +8,7 @@ using UnityEngine;
 
 namespace NOTCH.Panel
 {
-    /// <summary>
-    /// The NOTCH menu an admin opens with /notch-menu. Drawn with Unity's built-in immediate-mode UI, like the join
-    /// notice. Four tabs:
-    ///   Mods         — one row per mod: required, mismatch rule, ban; "Result now" says what a player would get.
-    ///   Server       — policy and the other server-wide settings.
-    ///   Admins       — the admin list.
-    ///   Player bans  — the game's own ban list, plus kick.
-    /// Mods and Server: nothing changes until Apply. Admins and Player bans: each button acts at once, after a
-    /// second click to confirm. This window only ASKS; the server checks every request and does the work.
-    /// </summary>
+    /// <summary>The admin menu (/notch-menu), Unity IMGUI. It only asks; the server checks and does the work.</summary>
     internal static class PanelWindow
     {
         private struct Edit { public byte Req, Rule; public bool Ban; }
@@ -164,8 +155,7 @@ namespace NOTCH.Panel
             GUILayout.Label($"Policy: {Policy}", bold);
             GUILayout.EndHorizontal();
 
-            // The titles sit in their own strip that follows the list's sideways scroll, so they stay over their columns.
-            // It has no scroll bars of its own and its position is always taken from the list.
+            // The titles sit in their own strip that follows the list's sideways scroll.
             GUILayout.BeginScrollView(new Vector2(scroll[0].x, 0f), false, false, GUIStyle.none, GUIStyle.none, GUILayout.Height(26f));
             GUILayout.BeginHorizontal(rowA);
             GUILayout.Label("Mod", bold, GUILayout.Width(250f));
