@@ -8,6 +8,8 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using NOTCH.Admin;
+using NOTCH.Catalogue;
+using NOTCH.Consent;
 using NOTCH.Net;
 using NuclearOption.ModdingApi;
 using NuclearOption.Networking;
@@ -24,7 +26,7 @@ namespace NOTCH
         public const string Guid = "com.skyraze.notch";
         public const string Name = "NOTCH";
         public const string FullName = "Nuclear Option Transponder Check Handshake";
-        public const string Version = "0.12.0";
+        public const string Version = "0.13.0";
         public const string BlueprinterGuid = "com.nikkorap.blueprinter";
         public const string NoLoadFolderName = "Client-Mods-NoLoad";
 
@@ -34,6 +36,7 @@ namespace NOTCH
         internal static ConfigEntry<int> ReplyTimeoutSeconds;
         internal static ConfigEntry<UnlistedMode> UnlistedClientMods;
         internal static ConfigEntry<AdminMode> AdminManagement;
+        internal static ConfigEntry<int> CatalogueSizeLimitMB;
         private static bool joinExchangeOn;
 
         /// <summary>Debug-only log line.</summary>
@@ -41,6 +44,9 @@ namespace NOTCH
 
         /// <summary>Every mod this machine knows about. Built once, after BepInEx has finished loading plugins.</summary>
         public static IReadOnlyList<ModEntry> KnownSet { get; private set; } = new List<ModEntry>();
+
+        /// <summary>Files BepInEx skipped because another copy of the same mod is loaded. One plain line each, for the log and the menu.</summary>
+        internal static List<string> Leftovers { get; private set; } = new List<string>();
 
         /// <summary>True on a dedicated server (its program is NuclearOptionServer, or the game runs without graphics).</summary>
         public static bool IsServerProcess =>
@@ -80,6 +86,13 @@ namespace NOTCH
                 "get the game's Admin level when they join. It only ever raises a level. " +
                 "Auto = on, unless a known admin mod is loaded. On = always on. Off = NOTCH leaves admins alone.");
 
+            CatalogueSizeLimitMB = Config.Bind("Catalogue", "SizeLimitMB", 8,
+                new ConfigDescription("Server only. The largest NOMNOM catalogue download NOTCH will accept, in megabytes. A larger file is dropped while it downloads. " +
+                                      "The catalogue is under 1 MB today; 8 leaves room to grow. From 64 up NOTCH warns, because a file that size takes memory to read.",
+                                      new AcceptableValueRange<int>(1, 1024)));
+
+            ConsentStore.Init(Config);                      // the answer to the Network Access Notice, and the notice as a text file
+
             // Lights the game's own "modded" marker in the server browser.
             NetworkManagerNuclearOption.ModdedServer = true;
 
@@ -87,10 +100,14 @@ namespace NOTCH
             PlayerHandle.PlayerJoined += h => Probe("joined", h);
             PlayerHandle.PlayerLeft += h => Probe("left", h);
 
+            var harmony = new Harmony(Guid);
+            // Catalogue checks start from two moments: the server starting, and a mission loading.
+            harmony.PatchAll(typeof(CatalogueRunner.ServerStartPatch));
+            harmony.PatchAll(typeof(CatalogueRunner.MissionLoadPatch));
+
             joinExchangeOn = Wire.Register(Logger);
             if (joinExchangeOn)
             {
-                var harmony = new Harmony(Guid);
                 harmony.PatchAll(typeof(ServerJoin.OnStartServerPatch));
                 harmony.PatchAll(typeof(ServerJoin.AuthenticatePatch));
                 harmony.PatchAll(typeof(ServerJoin.SessionLoopGuard));
@@ -110,11 +127,19 @@ namespace NOTCH
             catch (System.Exception e) { Log.LogInfo("[debug] [probe] failed: " + e.Message); }
         }
 
+        /// <summary>A file's path from the plugins folder down, so no folder names from this machine are shown or sent.</summary>
+        private static string Shown(string path)
+        {
+            string root = Paths.PluginPath.TrimEnd('\\', '/');
+            string rel = path != null && path.StartsWith(root, System.StringComparison.OrdinalIgnoreCase) ? path.Substring(root.Length).TrimStart('\\', '/') : Path.GetFileName(path ?? "");
+            return "plugins/" + rel.Replace('\\', '/');
+        }
+
         private static string AllowedOrBanned(ModEntry e) =>
             RuleStore.Banned.ContainsKey(RuleOverrides.Key(e.Guid)) ? "BANNED: players can't join with it (see /notch banned)." : "Counted as an allowed client mod.";
 
-        /// <summary>Unity calls this to draw immediate-mode UI. Only the join notice lives here.</summary>
-        private void OnGUI() { Popup.Draw(); NOTCH.Panel.PanelWindow.Draw(); }
+        /// <summary>Unity calls this to draw immediate-mode UI: the join notice, the admin menu and the Network Access Notice.</summary>
+        private void OnGUI() { Popup.Draw(); NOTCH.Panel.PanelWindow.Draw(); ConsentWindow.Draw(); }
 
         /// <summary>This server's name as players know it, or "" when it can't be told.</summary>
         internal static string ServerName()
@@ -134,6 +159,15 @@ namespace NOTCH
             all.AddRange(ModScanner.ScanPlugins(Paths.PluginPath, false, dbg));
             all.AddRange(ModScanner.ScanNobp(Paths.PluginPath, false, dbg));
             all.AddRange(ModScanner.ScanPatchers(dbg));
+
+            // A leftover copy of a mod (usually the old file after an update) is not counted, and the manager is told.
+            foreach (ModEntry e in all.Where(x => x.Origin == ModOrigin.Leftover))
+            {
+                string kept = Path.GetFileName(all.FirstOrDefault(x => x.Origin == ModOrigin.Loaded && x.Guid == e.Guid)?.FilePath ?? "another file");
+                Leftovers.Add($"{Shown(e.FilePath)} is a second copy of {e.Name}. BepInEx loaded {kept} and skipped this one.");
+            }
+            all.RemoveAll(x => x.Origin == ModOrigin.Leftover);
+            foreach (string line in Leftovers) Logger.LogWarning($"Leftover file: {line} NOTCH does not count it. Remove it.");
 
             var noLoad = new List<ModEntry>();
             if (server)

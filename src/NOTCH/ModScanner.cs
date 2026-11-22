@@ -61,7 +61,8 @@ namespace NOTCH
                             };
                             entry.ClientOnlyTag = entry.ProcessTags.Length > 0 && entry.ProcessTags.All(t => SameProcess(t, ClientProcess));
                             if (fromNoLoadFolder) entry.Origin = ModOrigin.NoLoadFolder;
-                            else if (Chainloader.PluginInfos.ContainsKey(entry.Guid)) entry.Origin = ModOrigin.Loaded;
+                            else if (Chainloader.PluginInfos.TryGetValue(entry.Guid, out PluginInfo running))
+                                entry.Origin = SameFile(running.Location, dll) ? ModOrigin.Loaded : ModOrigin.Leftover;   // BepInEx loads one file per plugin ID
                             else if (entry.ProcessTags.Length > 0 && !entry.ProcessTags.Any(t => SameProcess(t, Paths.ProcessName))) entry.Origin = ModOrigin.SkippedByTag;
                             else entry.Origin = ModOrigin.NotLoaded;
                             found.Add(entry);
@@ -76,6 +77,14 @@ namespace NOTCH
                 }
             }
             return found;
+        }
+
+        /// <summary>True when both paths are the same file. An unknown path counts as the same, so nothing is dropped by mistake.</summary>
+        private static bool SameFile(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return true;
+            try { return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase); }
+            catch { return true; }
         }
 
         /// <summary>Blueprinter content bundles (.nobp). Version comes from the file name (Name_1.2.3.nobp) when it has one.</summary>

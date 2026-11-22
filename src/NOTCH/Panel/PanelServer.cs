@@ -34,11 +34,17 @@ namespace NOTCH.Panel
                     Plugin.Log.LogWarning($"[menu] ignored a menu request from {who}: not an admin.");
                     return;
                 }
+                PanelAction[] asked = msg.Actions ?? new PanelAction[0];
+                if (asked.Any(a => a.Kind == PanelLogic.ActNotes))
+                {
+                    sender.Send(new NotchPanelNoteV1 { Protocol = Wire.ProtocolVersion, Leftovers = Plugin.Leftovers.ToArray() });
+                    if (asked.All(a => a.Kind == PanelLogic.ActNotes)) return;      // nothing else was asked: no new menu state needed
+                }
                 var done = new List<string>();
                 bool ok = true;
                 foreach (PanelAction a in msg.Actions ?? new PanelAction[0])
                 {
-                    if (a.Kind == PanelLogic.ActRefresh) continue;
+                    if (a.Kind == PanelLogic.ActRefresh || a.Kind == PanelLogic.ActNotes) continue;
                     string result;
                     bool good;
                     try { good = Do(a, out result); }
@@ -53,7 +59,7 @@ namespace NOTCH.Panel
             catch (Exception e) { Plugin.Log.LogWarning("[menu] request failed: " + e.Message); }
         }
 
-        private static bool IsAdmin(INetworkPlayer sender, out string who)
+        internal static bool IsAdmin(INetworkPlayer sender, out string who)
         {
             who = "the host";
             if (sender.IsHost) return true;

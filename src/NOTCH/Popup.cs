@@ -14,7 +14,7 @@ namespace NOTCH
         private static string header = "";
         private static List<string> lines;          // null = nothing to show
         private static Vector2 scroll;
-        private static bool seenInMatch;
+        private static bool seenInMatch, withReport;
         private static Texture2D backdrop, rowDark, rowLight, lineTex;
         private static GUIStyle text, centered, heading, rowA, rowB;
         private static GameObject blocker;
@@ -22,9 +22,9 @@ namespace NOTCH
         private static readonly List<ControllerMap> heldMaps = new List<ControllerMap>();
         private const CursorFlags NoticeCursor = (CursorFlags)(1 << 30);   // our own bit; the game uses the low ones
 
-        internal static void Show(string server, string headerLine, IEnumerable<string> problemLines)
+        internal static void Show(string server, string headerLine, IEnumerable<string> problemLines, bool showReport = true)
         {
-            serverName = server ?? ""; header = headerLine; lines = problemLines.ToList();
+            serverName = server ?? ""; header = headerLine; lines = problemLines.ToList(); withReport = showReport;
             scroll = Vector2.zero; seenInMatch = false;
         }
 
@@ -143,7 +143,7 @@ namespace NOTCH
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
             float sw = Screen.width / scale, sh = Screen.height / scale;
             // Grows with the number of issues up to a fixed height; beyond that the issue list scrolls.
-            float w = Mathf.Min(760f, sw - 40f), h = Mathf.Min(Mathf.Min(245f + 40f * lines.Count, 590f), sh - 120f);
+            float w = Mathf.Min(760f, sw - 40f), h = Mathf.Min(Mathf.Min((withReport ? 210f : 185f) + 40f * lines.Count, 590f), sh - 120f);
             var box = new Rect((sw - w) / 2f, (sh - h) / 2f, w, h);
 
             GUI.DrawTexture(box, backdrop);
@@ -160,11 +160,9 @@ namespace NOTCH
             for (int i = 0; i < lines.Count; i++) GUILayout.Label(lines[i], i % 2 == 0 ? rowA : rowB);
             GUILayout.EndScrollView();
 
-            // Fixed bottom: where the details are, the notice line and the Close button.
+            // Fixed bottom: where the details are, and the Close button.
             GUILayout.Space(6f);
-            GUILayout.Label("Full details: " + Plugin.ReportPathShown, centered);
-            GUILayout.Space(4f);
-            Underlined("You have joined — this is only a notice.");
+            if (withReport) GUILayout.Label("Full details: " + Plugin.ReportPathShown, centered);
             GUILayout.Space(8f);
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();

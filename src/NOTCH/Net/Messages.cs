@@ -58,6 +58,28 @@ namespace NOTCH.Net
         public PanelAction[] Actions;
     }
 
+    /// <summary>Server → an admin's client, when its menu asks: things the manager should know about (leftover mod files).</summary>
+    public struct NotchPanelNoteV1
+    {
+        public byte Protocol;
+        public string[] Leftovers;
+    }
+
+    /// <summary>Server → an admin's client: "show the notice you carry". No notice text travels, only its version.</summary>
+    public struct NotchNoticeAskV1
+    {
+        public byte Protocol;
+        public string ServerName, AgreementVersion, PreviousVersion;
+    }
+
+    /// <summary>An admin's client → server: the answer (1 = accepted, 2 = declined). The server checks the sender is an admin.</summary>
+    public struct NotchNoticeAnswerV1
+    {
+        public byte Protocol;
+        public string AgreementVersion;
+        public byte Answer;
+    }
+
     // Reading: every string goes through SafeText.Clean and every list has a size limit.
     internal static class Wire
     {
@@ -156,6 +178,29 @@ namespace NOTCH.Net
                 for (int i = 0; i < m.Actions.Length; i++) m.Actions[i] = new PanelAction { Kind = r.ReadByte(), Key = SafeText.Clean(r.ReadString()), Value = SafeText.Clean(r.ReadString()) };
                 return m;
             };
+            Writer<NotchPanelNoteV1>.Write = (w, m) =>
+            {
+                string[] lines = m.Leftovers ?? new string[0];
+                w.WriteByte(m.Protocol); w.WritePackedUInt32((uint)lines.Length);
+                foreach (string line in lines) w.WriteString(line.Length > 300 ? line.Substring(0, 300) : line);
+            };
+            Reader<NotchPanelNoteV1>.Read = r =>
+            {
+                var m = new NotchPanelNoteV1 { Protocol = r.ReadByte() };
+                m.Leftovers = new string[Count(r)];
+                for (int i = 0; i < m.Leftovers.Length; i++) m.Leftovers[i] = SafeText.Clean(r.ReadString());
+                return m;
+            };
+            Writer<NotchNoticeAskV1>.Write = (w, m) =>
+            {
+                w.WriteByte(m.Protocol); w.WriteString(m.ServerName ?? ""); w.WriteString(m.AgreementVersion ?? ""); w.WriteString(m.PreviousVersion ?? "");
+            };
+            Reader<NotchNoticeAskV1>.Read = r => new NotchNoticeAskV1
+            {
+                Protocol = r.ReadByte(), ServerName = SafeText.Clean(r.ReadString()), AgreementVersion = SafeText.Clean(r.ReadString()), PreviousVersion = SafeText.Clean(r.ReadString()),
+            };
+            Writer<NotchNoticeAnswerV1>.Write = (w, m) => { w.WriteByte(m.Protocol); w.WriteString(m.AgreementVersion ?? ""); w.WriteByte(m.Answer); };
+            Reader<NotchNoticeAnswerV1>.Read = r => new NotchNoticeAnswerV1 { Protocol = r.ReadByte(), AgreementVersion = SafeText.Clean(r.ReadString()), Answer = r.ReadByte() };
 
             try
             {
@@ -164,6 +209,9 @@ namespace NOTCH.Net
                 MessagePacker.RegisterMessage<NotchVerdictV1>();
                 MessagePacker.RegisterMessage<NotchPanelStateV1>();
                 MessagePacker.RegisterMessage<NotchPanelActionV1>();
+                MessagePacker.RegisterMessage<NotchPanelNoteV1>();
+                MessagePacker.RegisterMessage<NotchNoticeAskV1>();
+                MessagePacker.RegisterMessage<NotchNoticeAnswerV1>();
             }
             catch (ArgumentException e)
             {

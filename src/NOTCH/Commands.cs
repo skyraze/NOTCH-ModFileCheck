@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using BepInEx;
 using NOTCH.Admin;
+using NOTCH.Catalogue;
+using NOTCH.Consent;
 using NOTCH.Net;
 using NuclearOption.ModdingApi;
 
@@ -123,9 +125,9 @@ namespace NOTCH
             try
             {
                 string[] mods = modChoices.Select(c => c.Key).ToArray();
-                ChatCommands.RegisterServerCommand("notch", "NOTCH: show status, per-mod rules, required mods, banned mods, or the admin list",
+                ChatCommands.RegisterServerCommand("notch", "NOTCH: show status, per-mod rules, required mods, banned mods, the admin list, or the NOMNOM catalogue check",
                     r => Reply(DoInfo(r.Args.Count > 0 ? r.Args[0] : "status")),
-                    new[] { ChatCommandArgument.FromChoices("show", new[] { "status", "rules", "required", "banned", "admins" }, optional: true) },
+                    new[] { ChatCommandArgument.FromChoices("show", new[] { "status", "rules", "required", "banned", "admins", "catalogue" }, optional: true) },
                     PermissionLevel.Admin);
 
                 ChatCommands.RegisterServerCommand("notch-rule", "NOTCH: what happens when a player's copy of a mod does not match",
@@ -149,6 +151,10 @@ namespace NOTCH
                         new[] { ChatCommandArgument.FromChoices("action", new[] { "add", "remove" }), new ChatCommandArgument("player", ChatArgumentType.Player) },
                         PermissionLevel.Admin);
 
+                ChatCommands.RegisterServerCommand("notch-notice", "NOTCH: read and answer this server's Network Access Notice (works until it is answered)",
+                    r => Reply(ConsentRemote.Ask(r.Sender, out string text) ? Good(text) : Bad(text)),
+                    null, PermissionLevel.Admin);
+
                 ChatCommands.RegisterServerCommand("notch-menu", "NOTCH: open the menu — mods, server settings, admins, player bans",
                     r => { NOTCH.Panel.PanelServer.Open(r.Sender); return ChatCommandResult.Ok(); },
                     null, PermissionLevel.Admin);
@@ -164,6 +170,8 @@ namespace NOTCH
                 Remote("notch-required", a => DoInfo("required"));
                 Remote("notch-banned", a => DoInfo("banned"));
                 Remote("notch-admins", a => DoInfo("admins"));
+                Remote("notch-catalogue", a => DoInfo("catalogue"));
+                Remote("notch-notice", a => ConsentRemote.FromMachine(a.Count > 0 ? a[0] : "", out string text) ? Good(text) : Bad(text));
                 Remote("notch-rule", a => a.Count < 2 ? Bad("Usage: notch-rule <mod> <kick|warn|off|reset>") : DoRule(a[0], a[1], "remote command"));
                 Remote("notch-require", a => a.Count < 2 ? Bad("Usage: notch-require <mod> <on|off|reset>") : DoRequire(a[0], a[1], "remote command"));
                 Remote("notch-ban", a => a.Count < 2 ? Bad("Usage: notch-ban <mod or plugin id> <ban|allow>") : DoBan(a[0], a[1], "remote command", allowUnseen: true));
@@ -278,6 +286,7 @@ namespace NOTCH
                                                       : $"No mod is banned. {banChoices.Count} mod(s) can be banned with notch-ban.");
                 return Good($"Banned ({RuleStore.Banned.Count}):\n" + string.Join("\n", RuleStore.Banned.OrderBy(b => b.Key).Select(b => $"- {(b.Value.Length > 0 ? b.Value + " (" + b.Key + ")" : b.Key)}")));
             }
+            if (show == "catalogue") return Good(CatalogueRunner.Report());
             if (show == "admins")
             {
                 if (!AdminManager.Active) return Good("NOTCH's admin management is off on this server.");

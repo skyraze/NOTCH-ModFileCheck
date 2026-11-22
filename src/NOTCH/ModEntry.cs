@@ -9,7 +9,8 @@ namespace NOTCH
         Loaded,         // BepInEx loaded it here
         SkippedByTag,   // has a [BepInProcess] tag for another program, so BepInEx skipped it here
         NoLoadFolder,   // sits in Client-Mods-NoLoad: checked, never loaded
-        NotLoaded       // in the plugins folder but BepInEx did not load it, for some other reason
+        NotLoaded,      // in the plugins folder but BepInEx did not load it, for some other reason
+        Leftover        // another file with the same plugin ID is the one BepInEx loaded; this copy is not counted
     }
 
     /// <summary>One mod as NOTCH sees it: identity, version, file hash, and how it got on the list.</summary>

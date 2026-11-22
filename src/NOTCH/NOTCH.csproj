@@ -7,7 +7,7 @@
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>NOTCH</AssemblyName>
     <RootNamespace>NOTCH</RootNamespace>
-    <Version>0.12.0</Version>
+    <Version>0.13.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -36,6 +36,8 @@
     <Reference Include="$(ManagedDir)\com.rlabrecque.steamworks.net.dll" Private="false" />
     <!-- Rewired = the game's input library. Used only to pause game input while the join notice is open. -->
     <Reference Include="$(ManagedDir)\Rewired_Core.dll" Private="false" />
+    <!-- The JSON reader the game already ships. Used only to read NOMNOM's catalogue. -->
+    <Reference Include="$(ManagedDir)\Newtonsoft.Json.dll" Private="false" />
     <Reference Include="$(ManagedDir)\UnityEngine.dll" Private="false" />
     <Reference Include="$(ManagedDir)\UnityEngine.*.dll" Private="false" />
   </ItemGroup>

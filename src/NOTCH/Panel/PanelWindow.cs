@@ -22,6 +22,8 @@ namespace NOTCH.Panel
         private static int policyEdit = -1, timeoutEdit = -1, unlistedEdit = -1;                  // -1 = not changed
         private static string search = "", adminId = "", adminNote = "", banId = "", banReason = "";
         private static string confirmKey;
+        private static string[] leftovers = new string[0];   // leftover mod files on the server; the message can be hidden until the tab is opened again
+        private static bool leftoversHidden;
         private static float confirmUntil;
         private static Texture2D backdrop, rowDark, rowLight;
         private static GUIStyle text, small, bold, heading, rowA, rowB, button, toolbar, field, good, bad, changed;
@@ -45,8 +47,20 @@ namespace NOTCH.Panel
         {
             if (!state.Open && !visible) return;            // an answer that arrived after the menu was closed
             server = from; st = state; statusHidden = false;
-            if (state.Open && !visible) { visible = true; tab = 0; ClearEdits(); }
+            if (state.Open && !visible)
+            {
+                visible = true; tab = 0; ClearEdits();
+                leftovers = new string[0]; leftoversHidden = false;
+                // Ask for the notes only where the server knows the question (NOTCH 0.13.0 and later).
+                if (System.Version.TryParse(state.Version ?? "", out System.Version v) && v >= new System.Version(0, 13, 0)) Send(PanelLogic.ActNotes, "", "");
+            }
             if (awaitingApply) { awaitingApply = false; if (state.StatusOk) ClearEdits(); }
+        }
+
+        /// <summary>The server's notes arrived (asked for when the menu opened).</summary>
+        internal static void OnNote(INetworkPlayer from, NotchPanelNoteV1 note)
+        {
+            if (visible && from == server) leftovers = note.Leftovers ?? new string[0];
         }
 
         internal static void Close()
@@ -112,7 +126,7 @@ namespace NOTCH.Panel
 
             GUILayout.Label($"N.O.T.C.H v{st.Version} — menu" + (string.IsNullOrEmpty(st.ServerName) ? "" : "  ·  " + st.ServerName), heading);
             int newTab = GUILayout.Toolbar(tab, Tabs, button, GUILayout.Height(26f));
-            if (newTab != tab) { tab = newTab; confirmKey = null; statusHidden = true; }   // the last message belonged to the other tab
+            if (newTab != tab) { tab = newTab; confirmKey = null; statusHidden = true; leftoversHidden = false; }   // the last message belonged to the other tab
             GUILayout.Space(6f);
 
             if (tab == 0) DrawModsTop();                    // search row and column titles stay put above the list
@@ -146,6 +160,18 @@ namespace NOTCH.Panel
         /// <summary>The part of the Mods tab that does not scroll: the search row and the column titles.</summary>
         private static void DrawModsTop()
         {
+            if (leftovers.Length > 0 && !leftoversHidden)
+            {
+                // Can be dismissed to give the room back to the list; it returns whenever this tab is opened again.
+                GUILayout.BeginVertical(rowB);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(leftovers.Length == 1 ? "Leftover file on the server. Remove it, then restart the server:" : $"{leftovers.Length} leftover files on the server. Remove them, then restart the server:", changed, GUILayout.ExpandWidth(true));
+                if (GUILayout.Button("Dismiss", button, GUILayout.Width(90f))) leftoversHidden = true;
+                GUILayout.EndHorizontal();
+                foreach (string line in leftovers) GUILayout.Label(line, small);
+                GUILayout.EndVertical();
+                GUILayout.Space(4f);
+            }
             GUILayout.BeginHorizontal();
             GUILayout.Label("Find:", text, GUILayout.Width(36f));
             search = GUILayout.TextField(search, field, GUILayout.Width(220f));

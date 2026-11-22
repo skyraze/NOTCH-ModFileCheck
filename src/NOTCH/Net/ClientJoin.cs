@@ -26,6 +26,8 @@ namespace NOTCH.Net
                 __instance.client.MessageHandler.RegisterHandler<NotchVerdictV1>(OnVerdict, allowUnauthenticated: true);
                 NOTCH.Panel.PanelWindow.Close();
                 __instance.client.MessageHandler.RegisterHandler<NotchPanelStateV1>(NOTCH.Panel.PanelWindow.OnState, allowUnauthenticated: false);
+                __instance.client.MessageHandler.RegisterHandler<NotchPanelNoteV1>(NOTCH.Panel.PanelWindow.OnNote, allowUnauthenticated: false);
+                __instance.client.MessageHandler.RegisterHandler<NotchNoticeAskV1>(NOTCH.Consent.ConsentRemote.OnAsk, allowUnauthenticated: false);
                 Plugin.Dbg("connecting: ready to answer a NOTCH server");
             }
         }

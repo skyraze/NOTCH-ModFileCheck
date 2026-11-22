@@ -42,7 +42,8 @@ namespace NOTCH.Panel
 
         // Kinds of change.
         public const byte ActRequired = 1, ActRule = 2, ActModBan = 3, ActPolicy = 4, ActUnlisted = 5, ActTimeout = 6,
-                          ActAdminAdd = 7, ActAdminRemove = 8, ActPlayerBan = 9, ActPlayerUnban = 10, ActPlayerKick = 11, ActRefresh = 12;
+                          ActAdminAdd = 7, ActAdminRemove = 8, ActPlayerBan = 9, ActPlayerUnban = 10, ActPlayerKick = 11, ActRefresh = 12,
+                          ActNotes = 13;      // "send me the notes" (leftover files). Asked only of a server that knows it (0.13.0 and later)
 
         public static readonly string[] RequiredWords = { "auto", "on", "off" };
         public static readonly string[] RuleWords = { "auto", "kick", "warn", "off" };

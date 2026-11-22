@@ -117,3 +117,37 @@ Chat commands all need the Admin level, so the game hides them from everyone els
 **`Panel/PanelServer.cs`** builds what the menu shows and carries out the changes it sends back. The window only asks. Every request is checked again on the server (the sender must have the game's Admin level or be the host), because a message can be sent by any client, whatever its own menu shows. Mods, Server and Admins use NOTCH's own files and settings. Player bans use the game's own ban list and kick code, so a ban made there is an ordinary game ban that works without NOTCH.
 
 **`Panel/PanelData.cs`** is what travels between the two. Its `Result` method produces the "what happens to a player now" text for a row, and is built on `ModCompare.Blocks`, so the menu can never say something different from what the join check does.
+
+## Leftover files
+
+When a mod is updated by copying the new file in beside the old one, BepInEx loads one of them and skips the other. `ModScanner.cs` asks BepInEx which file it loaded for each plugin ID and marks any other file with that ID as a leftover. `Plugin.cs` leaves leftovers out of the known set, so they are not required, not compared and not sent to players, and names each one in the log at start-up. The menu's Mods tab shows the same lines in a message that can be dismissed; it returns whenever the tab is opened again and is gone for good once the file is removed and the server restarted. The menu asks for these lines in a request of its own (`ActNotes` in `Panel/PanelData.cs`) and only asks a server running 0.13.0 or later, so an older server is never sent a request it does not know.
+
+## The NOMNOM catalogue
+
+NOMNOM is a public catalogue of Nuclear Option mods. NOTCH reads from it whether a mod is meant for clients, for servers or for both. Only a dedicated server, or a game while it hosts for other players, ever contacts it; single player and the main menu's background scene do not count as hosting.
+
+**`Catalogue/CatalogueGate.cs`** holds the only two addresses NOTCH may ever connect to, as fixed text. Every connection calls `Require` first, which refuses anything else. Redirects are switched off for the same reason.
+
+**`Catalogue/CatalogueData.cs`** (pure logic) reads the catalogue one entry at a time and keeps only what NOTCH needs: the ID, the client/server value, whether it is an add-on and what it extends, and the file names and hashes of its releases. Anything that does not have the catalogue's shape is refused.
+
+**`Catalogue/CatalogueCheck.cs`** (pure logic) decides whether a download is kept. It is dropped if it passes the size limit while downloading, is under a quarter of the last good copy, or has fewer than half of the mod IDs the last good copy had. The same odd result twice running is accepted, so a real change is never rejected for ever, and a first download has nothing to be compared with. `CatalogueSchedule` holds the timing rule: no sooner than one hour after the last check, no later than two.
+
+**`Catalogue/CatalogueMatch.cs`** (pure logic) pairs installed mods with catalogue entries without any network call, trying in order: the folders the file sits in (nearest first), the plugin ID, a file name only one entry has, a file hash only one entry has. An add-on with no value of its own takes the value of the mod it extends.
+
+**`Catalogue/CatalogueRunner.cs`** is the part that touches the game. A check can start from three moments: the server starting, a mission loading, and one timer set for two hours after the last check. Nothing is polled. The download runs on a background thread at the lowest priority and hands one finished result back to the game's main loop, so a slow or failed connection cannot hold up a join or freeze the server. It fetches the small version file first and the catalogue only when the version changed. Between starts it remembers only the size and ID list of the last good copy (`BepInEx/NOTCH/catalogue-memory.txt`).
+
+## The Network Access Notice
+
+Nothing is contacted until the person running that copy of NOTCH has accepted the notice. Each machine handles it by itself; a server never sends the notice to anyone.
+
+**`Consent/ConsentState.cs`** (pure logic) holds the three answers (not answered, accepted, declined) and the version rule: an answer given for another version of the notice no longer counts, so the answer goes back to "not answered" once and is asked again.
+
+**`Consent/Agreement.cs`** (pure logic) knows which notice version is current, carries the earlier texts, and compares two of them line by line for the "what changed" view. **`Consent/AgreementText.cs`** holds the notice texts and nothing else.
+
+**`Consent/ConsentStore.cs`** keeps the answer in NOTCH's config file, in its own section, and writes the notice out as a text file beside NOTCH's other files. It re-reads the config file when its date has changed, so a hand edit applies without a restart. It also prints the reminder block in the console.
+
+**`Consent/ConsentReminder.cs`** times that block on a game: it waits for Blueprinter's last start-up line (or 20 seconds), so the block is not buried under other mods' messages.
+
+**`Consent/ConsentWindow.cs`** is the notice on screen. On a player's own game it opens in the main menu while the notice is unanswered, with Accept, Decline and Later; "Don't ask again" stops the window but not the console reminder. While it is open the main menu has no selected button, because the menu would otherwise act on Enter behind the window.
+
+**`Consent/ConsentRemote.cs`** lets an admin answer a dedicated server's notice from in game, once. `/notch-notice` makes the server send that admin's game a signal carrying only the notice's version; the admin's own NOTCH shows the text it carries, and only if it is the very same version. The answer goes back in one small message, and the server checks again that it comes from an admin and that the notice is still unanswered. Closing the window sends nothing.

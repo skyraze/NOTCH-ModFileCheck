@@ -32,6 +32,8 @@ namespace NOTCH.Net
                 __instance.server.MessageHandler.RegisterHandler<NotchTransponderV1>(OnTransponder, allowUnauthenticated: true);
                 // Requests from an admin's NOTCH menu. Only from players who have finished logging in; the sender is checked again in PanelServer.
                 __instance.server.MessageHandler.RegisterHandler<NotchPanelActionV1>(NOTCH.Panel.PanelServer.OnAction, allowUnauthenticated: false);
+                // An admin's answer to the Network Access Notice. Checked again in ConsentRemote.
+                __instance.server.MessageHandler.RegisterHandler<NotchNoticeAnswerV1>(NOTCH.Consent.ConsentRemote.OnAnswer, allowUnauthenticated: false);
                 Plugin.Dbg("server started: listening for mod-list answers");
             }
         }

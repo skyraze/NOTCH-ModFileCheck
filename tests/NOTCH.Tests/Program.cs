@@ -6,6 +6,9 @@ using NOTCH;
 using NOTCH.Net;
 using NOTCH.Admin;
 using NOTCH.Panel;
+using NOTCH.Catalogue;
+using NOTCH.Consent;
+using System.IO;
 
 int failed = 0, passed = 0;
 void Check(string name, bool ok) { if (ok) passed++; else { failed++; Console.WriteLine("FAIL: " + name); } }
@@ -230,6 +233,160 @@ Check("clean: text-reordering characters are dropped", SafeText.Clean("abc\u202E
 Check("clean: long text is cut", SafeText.Clean(new string('x', 5000)).Length == SafeText.MaxLength);
 Check("clean: ordinary names, versions and ids are untouched", SafeText.Clean("Configuration Manager 18.4.1 (com.bepis.bepinex.configurationmanager) – ünïcödé ✓") == "Configuration Manager 18.4.1 (com.bepis.bepinex.configurationmanager) – ünïcödé ✓");
 Check("clean: null and empty are safe", SafeText.Clean(null) == "" && SafeText.Clean("") == "");
+
+// ---- Stage 1a: the NOMNOM catalogue (gate, reader, checks, matching, schedule) ----
+Check("gate: the two NOMNOM addresses are allowed", CatalogueGate.Allows(CatalogueGate.VersionUrl) && CatalogueGate.Allows(CatalogueGate.ManifestUrl));
+foreach (string other in new[] { null, "", "https://example.com/manifest.json", "http://kopterbuzz.github.io/NOMNOM/manifest/manifest.json",
+    "https://kopterbuzz.github.io/NOMNOM/manifest/manifest.json?x=1", "https://kopterbuzz.github.io/NOMNOM/manifest/manifest.json/",
+    "https://KopterBuzz.github.io/NOMNOM/manifest/manifest.json", "https://kopterbuzz.github.io/NOMNOM/manifest/other.json",
+    "https://kopterbuzz.github.io.evil.example/NOMNOM/manifest/manifest.json", " https://kopterbuzz.github.io/NOMNOM/manifest/version.json",
+    "https://github.com/KopterBuzz/NOMNOM", "file:///C:/Windows/system.ini" })
+    Check("gate: refuses " + (other ?? "(null)"), !CatalogueGate.Allows(other));
+bool gateThrew = false; try { CatalogueGate.Require("https://example.com/"); } catch (InvalidOperationException) { gateThrew = true; }
+Check("gate: Require throws for another address", gateThrew);
+bool gateOk = true; try { CatalogueGate.Require(CatalogueGate.VersionUrl); } catch { gateOk = false; }
+Check("gate: Require passes NOMNOM", gateOk);
+
+const string Cat = @"[
+ {""id"":""com.nikkorap.blueprinter"",""displayName"":""Blueprinter"",""artifacts"":[{""fileName"":""Blueprinter_2.1.1.dll"",""type"":""plugin"",""hash"":""sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA""}]},
+ {""id"":""aryx.mc260"",""artifacts"":[{""fileName"":""Aryx_MC260_Chimera_1.2.4.dll"",""type"":""addOn"",""extends"":{""id"":""com.nikkorap.blueprinter"",""version"":""1.8.17""}}]},
+ {""id"":""p2082.expansion82"",""isClientOrServer"":""Both"",""artifacts"":[{""fileName"":""p2082.expansion82.dll"",""type"":""plugin"",""hash"":""sha256:" + H2 + @"""}]},
+ {""id"":""HudThing"",""isClientOrServer"":""client"",""artifacts"":[{""fileName"":""HudThing.zip"",""type"":""plugin""},{""fileName"":""HudThing.zip"",""type"":""plugin""}]},
+ {""id"":""HudSkin"",""artifacts"":[{""fileName"":""skin.nobp"",""type"":""addon"",""extends"":{""id"":""HudThing""}}]},
+ {""id"":""ServerTool"",""isClientOrServer"":""Server"",""artifacts"":[{""fileName"":""ServerTool.dll""}]}
+]";
+CatalogueRead read = CatalogueReader.Read(new StringReader(Cat));
+CatalogueEntry Ent(string id) => read.Entries.First(e => e.Id == id);
+Check("reader: a catalogue is read", read.Ok && read.Entries.Count == 6);
+Check("reader: client / server / both, any capitals", Ent("HudThing").Side == CatalogueSide.Client && Ent("ServerTool").Side == CatalogueSide.Server && Ent("p2082.expansion82").Side == CatalogueSide.Both);
+Check("reader: no value stays None", Ent("com.nikkorap.blueprinter").Side == CatalogueSide.None);
+Check("reader: 'addOn' counts as an add-on, with what it extends", Ent("aryx.mc260").Addon && Ent("aryx.mc260").Extends == "com.nikkorap.blueprinter");
+Check("reader: a plugin is not an add-on", !Ent("p2082.expansion82").Addon);
+Check("reader: hash loses its prefix and capitals", Ent("com.nikkorap.blueprinter").Hashes.Single() == H1);
+Check("reader: a repeated file name is kept once", Ent("HudThing").FileNames.Count == 1);
+Check("reader: not a list is refused", !CatalogueReader.Read(new StringReader("{\"id\":\"x\"}")).Ok);
+Check("reader: an error page is refused", !CatalogueReader.Read(new StringReader("<html><body>404</body></html>")).Ok);
+Check("reader: empty text is refused", !CatalogueReader.Read(new StringReader("")).Ok);
+Check("reader: an empty list is refused", !CatalogueReader.Read(new StringReader("[]")).Ok);
+Check("reader: a cut-off download is refused", !CatalogueReader.Read(new StringReader(Cat.Substring(0, Cat.Length / 2))).Ok);
+Check("reader: a list of other things is refused", !CatalogueReader.Read(new StringReader("[1,2,3]")).Ok);
+Check("reader: objects that are not catalogue entries are refused", !CatalogueReader.Read(new StringReader("[{\"name\":\"a\"},{\"name\":\"b\"}]")).Ok);
+Check("reader: one odd entry among good ones is skipped", CatalogueReader.Read(new StringReader(Cat.Replace("[\n", "[\n {\"junk\":true},"))).Entries.Count == 6);
+Check("reader: values of the wrong kind do not crash it", CatalogueReader.Read(new StringReader("[{\"id\":5,\"artifacts\":\"x\"},{\"id\":\"ok\",\"isClientOrServer\":7,\"artifacts\":[{\"fileName\":\"a.dll\",\"hash\":9,\"extends\":\"z\"}]}]")).Entries.Count == 1);
+
+Check("limit: default is 8 MB", CatalogueCheck.DefaultCeiling == 8 * 1024 * 1024);
+Check("limit: below 1 MB becomes 1 MB", CatalogueCheck.ClampCeiling(10) == CatalogueCheck.MinCeiling);
+Check("limit: above 1 GB becomes 1 GB", CatalogueCheck.ClampCeiling(long.MaxValue) == CatalogueCheck.MaxCeiling);
+Check("limit: a value in range is kept", CatalogueCheck.ClampCeiling(20 * CatalogueCheck.MB) == 20 * CatalogueCheck.MB);
+Check("limit: warning starts at 64 MB", !CatalogueCheck.CeilingIsLarge(64 * CatalogueCheck.MB - 1) && CatalogueCheck.CeilingIsLarge(64 * CatalogueCheck.MB));
+
+string[] ids10 = Enumerable.Range(0, 10).Select(i => "mod" + i).ToArray();
+var mem = new CatalogueMemory();
+Check("judge: a first download is accepted with nothing to compare", CatalogueCheck.Judge(900000, ids10, mem, out mem) == CatalogueVerdict.Accepted && mem.LastGoodSize == 900000 && mem.KnownIds.Count == 10);
+Check("judge: the same again is accepted", CatalogueCheck.Judge(900500, ids10, mem, out mem) == CatalogueVerdict.Accepted);
+Check("judge: growth is accepted (new mods added)", CatalogueCheck.Judge(1500000, ids10.Concat(new[] { "new1", "new2", "new3", "new4", "new5", "new6", "new7", "new8", "new9", "new10", "new11", "new12" }).ToArray(), mem, out mem) == CatalogueVerdict.Accepted);
+var before = mem;
+Check("judge: under a quarter of the last good size is too small", CatalogueCheck.Judge(100000, mem.KnownIds, mem, out mem) == CatalogueVerdict.TooSmall);
+Check("judge: a rejection keeps the old memory", mem.LastGoodSize == before.LastGoodSize && mem.KnownIds.Count == before.KnownIds.Count && mem.Rejected.Length == 64);
+mem = before;
+string[] strangers = Enumerable.Range(0, 30).Select(i => "other" + i).ToArray();
+Check("judge: fewer than half the known IDs is too different", CatalogueCheck.Judge(1400000, strangers, mem, out mem) == CatalogueVerdict.TooDifferent);
+Check("judge: a different odd file next time is still rejected", CatalogueCheck.Judge(1400000, strangers.Concat(new[] { "x" }).ToArray(), mem, out mem) == CatalogueVerdict.TooDifferent);
+Check("judge: the same result twice running is accepted (a real change)", CatalogueCheck.Judge(1400000, strangers.Concat(new[] { "x" }).ToArray(), mem, out mem) == CatalogueVerdict.Accepted && mem.Rejected == "" && mem.KnownIds.Count == 31);
+Check("judge: exactly half the known IDs present is not too different", !CatalogueCheck.TooDifferent(new[] { "a", "b" }, new[] { "a", "b", "c", "d" }));
+Check("judge: one fewer than half is", CatalogueCheck.TooDifferent(new[] { "a" }, new[] { "a", "b", "c", "d" }));
+Check("judge: ID comparison ignores capitals", !CatalogueCheck.TooDifferent(new[] { "A", "B" }, new[] { "a", "b" }));
+Check("fingerprint: order and capitals do not matter", CatalogueCheck.Fingerprint(new[] { "b", "A" }) == CatalogueCheck.Fingerprint(new[] { "a", "B" }));
+Check("fingerprint: different lists differ", CatalogueCheck.Fingerprint(new[] { "a" }) != CatalogueCheck.Fingerprint(new[] { "a", "b" }));
+var saved = CatalogueMemory.Parse(new CatalogueMemory { LastGoodSize = 898000, KnownIds = { "a.b", "C d" }, Rejected = "abc" }.Serialize());
+Check("memory: survives being written and read", saved.LastGoodSize == 898000 && saved.KnownIds.SequenceEqual(new[] { "a.b", "C d" }) && saved.Rejected == "abc");
+Check("memory: rubbish reads as empty", CatalogueMemory.Parse("hello\n::\nsize: -5\nsize: abc").First && CatalogueMemory.Parse(null).First);
+Check("every verdict has wording", Enum.GetValues(typeof(CatalogueVerdict)).Cast<CatalogueVerdict>().All(v => CatalogueCheck.Reason(v).Length > 0));
+
+ModEntry Inst(string guid, string path, string hash = "") => new ModEntry { Guid = guid, Name = guid, Version = "1.0.0", FilePath = path, Sha256 = hash, Kind = ModKind.Plugin };
+CatalogueMatched matched = CatalogueMatch.Run(new[]
+{
+    Inst("com.nikkorap.blueprinter", @"D:\Game\BepInEx\plugins\Blueprinter\Blueprinter.dll"),                                   // by plugin ID
+    Inst("AryxMC260Chimera", @"D:\Game\BepInEx\plugins\com.nikkorap.blueprinter\addons\aryx.mc260\Chimera.dll"),              // by folder name
+    Inst("Blueprinter.shippack1", @"D:\Game\BepInEx\plugins\loose\renamed.dll", H2),                                          // by file hash
+    Inst("some.server.tool", "/srv/game/BepInEx/plugins/ServerTool.dll"),                                                       // by file name
+    Inst("unknown.mod", @"D:\Game\BepInEx\plugins\Unknown\Unknown.dll"),
+}, read.Entries);
+Check("match: by plugin ID", matched.ByGuid["com.nikkorap.blueprinter"].How == "plugin ID");
+Check("match: by folder name", matched.ByGuid["AryxMC260Chimera"].Id == "aryx.mc260" && matched.ByGuid["AryxMC260Chimera"].How == "folder name");
+Check("match: by file hash", matched.ByGuid["Blueprinter.shippack1"].Id == "p2082.expansion82" && matched.ByGuid["Blueprinter.shippack1"].Side == CatalogueSide.Both);
+Check("match: by file name, forward slashes too", matched.ByGuid["some.server.tool"].Side == CatalogueSide.Server && matched.ByGuid["some.server.tool"].How == "file name");
+Check("match: unmatched mods are listed", matched.Unmatched.Single() == "unknown.mod 1.0.0");
+Check("match: an add-on with no value takes it from what it extends", CatalogueMatch.Run(new[] { Inst("skin", @"C:\g\BepInEx\plugins\HudSkin\s.dll") }, read.Entries).ByGuid["skin"].Side == CatalogueSide.Client);
+Check("match: nothing to inherit stays None", matched.ByGuid["AryxMC260Chimera"].Side == CatalogueSide.None);
+var twins = new[] { new CatalogueEntry { Id = "one", FileNames = { "plugin.dll" } }, new CatalogueEntry { Id = "two", FileNames = { "plugin.dll" } } };
+Check("match: a file name two entries share matches neither", CatalogueMatch.Run(new[] { Inst("x", @"C:\g\BepInEx\plugins\plugin.dll") }, twins).Unmatched.Count == 1);
+var loop = new[] { new CatalogueEntry { Id = "a", Extends = "b", FileNames = { "a.dll" } }, new CatalogueEntry { Id = "b", Extends = "a", FileNames = { "b.dll" } } };
+Check("match: entries that extend each other do not hang", CatalogueMatch.Run(new[] { Inst("a", @"C:\g\BepInEx\plugins\a.dll") }, loop).ByGuid["a"].Side == CatalogueSide.None);
+Check("match: BepInEx's own folders name no mod", CatalogueMatch.FolderOf(@"C:\g\BepInEx\plugins\x.dll") == "" && CatalogueMatch.FolderOf(@"C:\g\BepInEx\plugins\Mod\x.dll") == "Mod");
+Check("match: nothing in, nothing out", CatalogueMatch.Run(null, null).ByGuid.Count == 0);
+
+DateTime t0 = new DateTime(2026, 11, 22, 12, 0, 0, DateTimeKind.Utc);
+Check("schedule: never checked means check now", CatalogueSchedule.Due(t0, DateTime.MinValue, false));
+Check("schedule: 59 minutes on, even a mission load does not check", !CatalogueSchedule.Due(t0.AddMinutes(59), t0, true));
+Check("schedule: after an hour a mission load checks", CatalogueSchedule.Due(t0.AddMinutes(60), t0, true));
+Check("schedule: after an hour with no mission load it waits", !CatalogueSchedule.Due(t0.AddMinutes(90), t0, false));
+Check("schedule: after two hours it checks anyway", CatalogueSchedule.Due(t0.AddMinutes(120), t0, false));
+Check("schedule: a clock set backwards checks", CatalogueSchedule.Due(t0.AddMinutes(-5), t0, false));
+
+// ---- Stage 1a: the notice (answer, version, comparison) ----
+ConsentNow now = ConsentState.Resolve(ConsentAnswer.NotAnswered, "0.13.0", "", "0.13.0");
+Check("consent: a fresh install is not answered and not reset", now.Answer == ConsentAnswer.NotAnswered && !now.WasReset && now.Previous == "");
+now = ConsentState.Resolve(ConsentAnswer.Accepted, "0.13.0", "", "0.13.0");
+Check("consent: an answer for the current version stands", now.Answer == ConsentAnswer.Accepted && !now.WasReset);
+now = ConsentState.Resolve(ConsentAnswer.Accepted, "v0.13.0", "", "0.13.0");
+Check("consent: a leading v makes no difference", now.Answer == ConsentAnswer.Accepted && !now.WasReset);
+now = ConsentState.Resolve(ConsentAnswer.Accepted, "0.13.0", "", "0.16.0");
+Check("consent: a newer agreement resets a yes, and remembers the old version", now.Answer == ConsentAnswer.NotAnswered && now.WasReset && now.Version == "0.16.0" && now.Previous == "0.13.0");
+now = ConsentState.Resolve(ConsentAnswer.Declined, "0.13.0", "", "0.16.0");
+Check("consent: a newer agreement asks people who declined too", now.Answer == ConsentAnswer.NotAnswered && now.WasReset && now.Previous == "0.13.0");
+now = ConsentState.Resolve(now.Answer, now.Version, now.Previous, "0.16.0");
+Check("consent: after the reset the next start does not reset again", !now.WasReset && now.Answer == ConsentAnswer.NotAnswered && now.Previous == "0.13.0");
+now = ConsentState.Resolve(ConsentAnswer.Accepted, "0.16.0", "0.13.0", "0.16.0");
+Check("consent: answering by hand after a reset stands, and the old version is dropped", now.Answer == ConsentAnswer.Accepted && !now.WasReset && now.Previous == "");
+now = ConsentState.Resolve(ConsentAnswer.NotAnswered, "0.13.0", "", "0.16.0");
+Check("consent: never answered, then a new agreement: nothing to compare with", now.WasReset && now.Previous == "");
+now = ConsentState.Resolve(ConsentAnswer.Accepted, "", "", "0.13.0");
+Check("consent: a missing version is treated as another version", now.Answer == ConsentAnswer.NotAnswered && now.WasReset);
+now = ConsentState.Resolve((ConsentAnswer)9, "0.13.0", "", "0.13.0");
+Check("consent: an answer that is not one of the three is not answered", now.Answer == ConsentAnswer.NotAnswered);
+Check("consent: only an explicit yes allows a connection", ConsentState.MayConnect(ConsentAnswer.Accepted) && !ConsentState.MayConnect(ConsentAnswer.NotAnswered) && !ConsentState.MayConnect(ConsentAnswer.Declined));
+
+Check("agreement: the current version has its text", Agreement.CurrentText.Contains("NOTCH NETWORK ACCESS NOTICE AND CONSENT") && Agreement.TextOf(Agreement.Current) == Agreement.CurrentText);
+Check("agreement: the text names its own version", Agreement.CurrentText.Contains("Agreement Version: " + Agreement.Current));
+Check("agreement: the text says only NOMNOM is contacted and nothing is installed", Agreement.CurrentText.Contains("NOMNOM") && Agreement.CurrentText.Contains("does not download, install, modify"));
+Check("agreement: no line is too wide for the window", Agreement.CurrentText.Split('\n').All(l => l.Length <= 80));
+Check("agreement: an unknown version has no text", Agreement.TextOf("9.9.9") == null && Agreement.TextOf(null) == null);
+Check("agreement: the first version has nothing to compare with", !Agreement.CanCompare(Agreement.Current) && !Agreement.CanCompare("") && !Agreement.CanCompare("0.1.0"));
+List<DiffLine> diff = Agreement.Diff("one\ntwo\nthree\nfour", "one\nTWO\nthree\nfour\nfive");
+Check("diff: unchanged lines stay, in order", string.Join("|", diff.Where(d => d.Kind == DiffKind.Same).Select(d => d.Text)) == "one|three|four");
+Check("diff: a changed line shows as removed then added", string.Join("|", diff.Select(Agreement.Mark)) == "  one|- two|+ TWO|  three|  four|+ five");
+Check("diff: identical texts have no changes", Agreement.Diff("a\nb", "a\r\nb\n").All(d => d.Kind == DiffKind.Same));
+Check("diff: everything removed and everything added", Agreement.Diff("a\nb", "c").Count(d => d.Kind == DiffKind.Removed) == 2 && Agreement.Diff("a\nb", "c").Count(d => d.Kind == DiffKind.Added) == 1);
+Check("diff: empty old text makes every line an addition", Agreement.Diff("", "x\ny").Count(d => d.Kind == DiffKind.Added) == 2);
+
+// ---- Stage 1b: reading a download with a limit, and the catalogue's version file ----
+byte[] kept = CatalogueCheck.ReadCapped(new MemoryStream(new byte[50000]), 50000, null, out CatalogueVerdict capVerdict);
+Check("download: a file exactly at the limit is kept", kept != null && kept.Length == 50000 && capVerdict == CatalogueVerdict.Accepted);
+Check("download: one byte over the limit is dropped", CatalogueCheck.ReadCapped(new MemoryStream(new byte[50001]), 50000, null, out capVerdict) == null && capVerdict == CatalogueVerdict.TooLarge);
+Check("download: running out of time stops it", CatalogueCheck.ReadCapped(new MemoryStream(new byte[50000]), 50000, () => true, out capVerdict) == null && capVerdict == CatalogueVerdict.TookTooLong);
+Check("download: an empty file reads as empty", CatalogueCheck.ReadCapped(new MemoryStream(), 100, null, out capVerdict).Length == 0);
+Check("version: quotes and spaces are removed", CatalogueCheck.CleanVersion(" \"1.1.0.3179\"\n") == "1.1.0.3179");
+Check("version: a bare version is kept", CatalogueCheck.CleanVersion("1.2.0-beta") == "1.2.0-beta");
+Check("version: an error page is not a version", CatalogueCheck.CleanVersion("<html>404</html>") == "" && CatalogueCheck.CleanVersion("") == "" && CatalogueCheck.CleanVersion(null) == "");
+Check("version: something far too long is not a version", CatalogueCheck.CleanVersion(new string('1', 41)) == "");
+
+// ---- A mod unpacked into nested folders (found on Sky's game: Configuration Manager) ----
+var nested = new[] { new CatalogueEntry { Id = "BepInEx.ConfigurationManager", FileNames = { "BepInEx.ConfigurationManager_v18.4.1.zip" } }, new CatalogueEntry { Id = "aryx.mc260", FileNames = { "a.dll" } }, new CatalogueEntry { Id = "com.nikkorap.blueprinter", FileNames = { "b.dll" } } };
+Check("match: a folder further up names the mod", CatalogueMatch.Run(new[] { Inst("com.bepis.bepinex.configurationmanager", @"D:\Game\BepInEx\plugins\BepInEx.ConfigurationManager\BepInEx\plugins\ConfigurationManager\ConfigurationManager.dll") }, nested).ByGuid["com.bepis.bepinex.configurationmanager"].Id == "BepInEx.ConfigurationManager");
+Check("match: the nearest folder wins over one further up", CatalogueMatch.Run(new[] { Inst("AryxMC260Chimera", @"D:\Game\BepInEx\plugins\com.nikkorap.blueprinter\addons\aryx.mc260\Chimera.dll") }, nested).ByGuid["AryxMC260Chimera"].Id == "aryx.mc260");
+Check("match: folders above BepInEx are never used", CatalogueMatch.FoldersOf(@"D:\aryx.mc260\Game\BepInEx\plugins\Other\x.dll").SequenceEqual(new[] { "Other" }));
+Check("match: a path without a BepInEx folder uses only the file's own folder", CatalogueMatch.FoldersOf(@"D:\a\b\c\x.dll").SequenceEqual(new[] { "c" }));
 
 Console.WriteLine($"{passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;
