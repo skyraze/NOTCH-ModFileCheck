@@ -24,9 +24,16 @@ namespace NOTCH.Panel
         private static string confirmKey;
         private static string[] leftovers = new string[0];   // leftover mod files on the server; the message can be hidden until the tab is opened again
         private static bool leftoversHidden;
+        // Config sync and the catalogue (the server's second message). syncEdits: mod id → the choice waiting for Apply.
+        private static NotchPanelNoteV1 note;
+        private static bool notesKnown, syncOpen;
+        private static readonly Dictionary<string, byte> syncEdits = new Dictionary<string, byte>();
+        private static string limitText = "";
+        private static int pendingTab = -1;                 // the tab the admin clicked while changes were unapplied
+        private static readonly string[] SyncLabels = { "Auto", "Sync", "Warn", "Off" };
         private static float confirmUntil;
-        private static Texture2D backdrop, rowDark, rowLight;
-        private static GUIStyle text, small, bold, heading, rowA, rowB, button, toolbar, field, good, bad, changed;
+        private static Texture2D backdrop, rowDark, rowLight, caution;
+        private static GUIStyle text, small, bold, heading, rowA, rowB, button, toolbar, field, good, bad, changed, icon;
 
         private static readonly string[] Tabs = { "Mods", "Server", "Admins", "Player bans" };
         private static readonly string[] ReqLabels = { "Auto", "On", "Off" };
@@ -50,17 +57,21 @@ namespace NOTCH.Panel
             if (state.Open && !visible)
             {
                 visible = true; tab = 0; ClearEdits();
-                leftovers = new string[0]; leftoversHidden = false;
+                leftovers = new string[0]; leftoversHidden = false; note = default; syncOpen = false; pendingTab = -1;
                 // Ask for the notes only where the server knows the question (NOTCH 0.13.0 and later).
-                if (System.Version.TryParse(state.Version ?? "", out System.Version v) && v >= new System.Version(0, 13, 0)) Send(PanelLogic.ActNotes, "", "");
+                notesKnown = System.Version.TryParse(state.Version ?? "", out System.Version v) && v >= new System.Version(0, 13, 0);
+                if (notesKnown) Send(PanelLogic.ActNotes, "", "");
             }
             if (awaitingApply) { awaitingApply = false; if (state.StatusOk) ClearEdits(); }
         }
 
         /// <summary>The server's notes arrived (asked for when the menu opened).</summary>
-        internal static void OnNote(INetworkPlayer from, NotchPanelNoteV1 note)
+        internal static void OnNote(INetworkPlayer from, NotchPanelNoteV1 fresh)
         {
-            if (visible && from == server) leftovers = note.Leftovers ?? new string[0];
+            if (!visible || from != server) return;
+            note = fresh;
+            leftovers = fresh.Leftovers ?? new string[0];
+            if (limitText.Length == 0) limitText = fresh.SizeLimitMB.ToString();
         }
 
         internal static void Close()
@@ -70,7 +81,7 @@ namespace NOTCH.Panel
             Popup.GuardOff();
         }
 
-        private static void ClearEdits() { edits.Clear(); policyEdit = timeoutEdit = unlistedEdit = -1; confirmKey = null; }
+        private static void ClearEdits() { edits.Clear(); policyEdit = timeoutEdit = unlistedEdit = -1; confirmKey = null; syncEdits.Clear(); limitText = ""; }
 
         private static void Send(byte kind, string key, string value) =>
             server?.Send(new NotchPanelActionV1 { Protocol = Wire.ProtocolVersion, Actions = new[] { new PanelAction { Kind = kind, Key = key, Value = value } } });
@@ -87,7 +98,10 @@ namespace NOTCH.Panel
 
         private static JoinPolicy Policy => (JoinPolicy)(policyEdit >= 0 ? policyEdit : st.Policy);
         private static bool ReportUnlisted => unlistedEdit >= 0 ? unlistedEdit == 0 : st.ReportUnlisted;
-        private static int PendingCount => edits.Count + (policyEdit >= 0 ? 1 : 0) + (timeoutEdit >= 0 ? 1 : 0) + (unlistedEdit >= 0 ? 1 : 0);
+        private static int PendingCount => edits.Count + (policyEdit >= 0 ? 1 : 0) + (timeoutEdit >= 0 ? 1 : 0) + (unlistedEdit >= 0 ? 1 : 0) + syncEdits.Count + (LimitEdit > 0 ? 1 : 0);
+
+        /// <summary>The size limit typed in, when it is a valid number different from the server's; otherwise 0.</summary>
+        private static int LimitEdit => notesKnown && int.TryParse(limitText, out int mb) && mb >= 1 && mb <= 1024 && mb != note.SizeLimitMB ? mb : 0;
 
         /// <summary>Called from the plugin's OnGUI every frame.</summary>
         internal static void Draw()
@@ -113,6 +127,7 @@ namespace NOTCH.Panel
                 button = new GUIStyle(GUI.skin.button) { richText = false, fontSize = 12 };
                 toolbar = new GUIStyle(GUI.skin.button) { richText = false, fontSize = 11, margin = new RectOffset(0, 0, 2, 2), padding = new RectOffset(2, 2, 3, 3) };
                 field = new GUIStyle(GUI.skin.textField) { richText = false, fontSize = 13 };
+                icon = new GUIStyle { alignment = TextAnchor.MiddleCenter, imagePosition = ImagePosition.ImageOnly, margin = new RectOffset(0, 4, 3, 0) };
             }
 
             float scale = Mathf.Max(1f, Screen.height / 1080f);
@@ -126,7 +141,25 @@ namespace NOTCH.Panel
 
             GUILayout.Label($"N.O.T.C.H v{st.Version} — menu" + (string.IsNullOrEmpty(st.ServerName) ? "" : "  ·  " + st.ServerName), heading);
             int newTab = GUILayout.Toolbar(tab, Tabs, button, GUILayout.Height(26f));
-            if (newTab != tab) { tab = newTab; confirmKey = null; statusHidden = true; leftoversHidden = false; }   // the last message belonged to the other tab
+            if (newTab != tab)
+            {
+                if (PendingCount > 0 && !awaitingApply) pendingTab = newTab;        // unapplied changes: ask first
+                else SwitchTab(newTab);
+            }
+            if (pendingTab >= 0)
+            {
+                int waiting = PendingCount;
+                if (waiting == 0) { SwitchTab(pendingTab); }
+                else
+                {
+                    GUILayout.BeginHorizontal(rowB);
+                    GUILayout.Label($"You have {waiting} change{(waiting == 1 ? "" : "s")} that {(waiting == 1 ? "is" : "are")} not applied yet. What do you want to do?", changed, GUILayout.ExpandWidth(true));
+                    if (GUILayout.Button("Apply, then switch", button, GUILayout.Width(150f))) { int to = pendingTab; Apply(); SwitchTab(to); }
+                    else if (GUILayout.Button("Discard, then switch", button, GUILayout.Width(150f))) { int to = pendingTab; ClearEdits(); SwitchTab(to); }
+                    else if (GUILayout.Button("Stay here", button, GUILayout.Width(110f))) pendingTab = -1;
+                    GUILayout.EndHorizontal();
+                }
+            }
             GUILayout.Space(6f);
 
             if (tab == 0) DrawModsTop();                    // search row and column titles stay put above the list
@@ -153,6 +186,11 @@ namespace NOTCH.Panel
 
             GUILayout.EndArea();
             GUI.matrix = old;
+        }
+
+        private static void SwitchTab(int to)
+        {
+            tab = to; pendingTab = -1; confirmKey = null; statusHidden = true; leftoversHidden = false;   // the last message belonged to the other tab
         }
 
         // ---- Mods ---------------------------------------------------------------------------------------------
@@ -279,6 +317,107 @@ namespace NOTCH.Panel
             int known = (st.Mods ?? new PanelMod[0]).Count(m => m.Where <= PanelLogic.SkippedClientOnly);
             GUILayout.Label($"NOTCH v{st.Version}.  Known mods: {known}.  Admin management: {(st.AdminActive ? "on" : "off")}.  Game ban file: {(st.BanFileOk ? "set" : "not set")}.", small);
             GUILayout.Label("Changes here are saved to the server's config file when you press Apply, and take effect from the next join.", small);
+            GUILayout.Space(14f);
+            DrawSync();
+        }
+
+        /// <summary>Config sync and the NOMNOM catalogue: status, the size limit, and a per-mod table that stays closed until asked for.</summary>
+        private static void DrawSync()
+        {
+            GUILayout.Label("Config sync and the NOMNOM catalogue", bold);
+            if (!notesKnown) { GUILayout.Label("This server's NOTCH is older than 0.13.0 and has no config sync.", small); return; }
+            if (note.Sync == null) { GUILayout.Label("Waiting for the server…", small); return; }
+
+            if (limitText.Length == 0 && GUI.GetNameOfFocusedControl() != "notch-limit") limitText = note.SizeLimitMB.ToString();   // nothing typed: show the server's value
+            string state = note.Catalogue ?? "";
+            int cut = state.IndexOf("; not in the catalogue:", StringComparison.Ordinal);   // those mods get their own line below
+            GUILayout.Label(cut >= 0 ? state.Substring(0, cut) + "." : state, small);
+            if ((note.Unmatched ?? new string[0]).Length > 0)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Not in the catalogue:", small, GUILayout.ExpandWidth(false));
+                GUILayout.Label(string.Join(", ", note.Unmatched), bold);
+                GUILayout.EndHorizontal();
+            }
+
+            bool validLimit = int.TryParse(limitText, out int typed) && typed >= 1 && typed <= 1024;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Largest catalogue download accepted:", text, GUILayout.Width(222f));
+            if (caution == null) caution = Caution();
+            GUILayout.Label(!validLimit || typed >= 64 ? new GUIContent(caution) : GUIContent.none, icon, GUILayout.Width(22f), GUILayout.Height(20f));   // beside a value that is refused or large
+            GUI.SetNextControlName("notch-limit");
+            limitText = new string(GUILayout.TextField(limitText, 4, field, GUILayout.Width(60f)).Where(char.IsDigit).ToArray());
+            GUILayout.Label("MB  (1 to 1024" + CatalogueFacts() + ")", small);
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            if (!validLimit) GUILayout.Label("Enter a whole number from 1 to 1024.", bad);
+            else if (typed >= 64) GUILayout.Label("That is a large limit. A file that size would take that much memory to read and could slow or stop the server if one ever arrived.", bad);
+            else if (LimitEdit > 0) GUILayout.Label($"Will change from {note.SizeLimitMB} MB when you press Apply.", changed);
+            GUILayout.Space(8f);
+
+            PanelSync[] rows = note.Sync;
+            if (GUILayout.Button((syncOpen ? "Hide" : "Show") + $" per-mod config sync ({rows.Length} mod{(rows.Length == 1 ? "" : "s")} with settings)", button, GUILayout.Width(360f), GUILayout.Height(24f))) syncOpen = !syncOpen;
+            if (!syncOpen) return;
+
+            GUILayout.Label("Sync = players get this server's values for the session.  Warn = differences are reported, nothing is changed.  Off = not sent.  Auto = the default.", small);
+            GUILayout.BeginHorizontal(rowA);
+            GUILayout.Label("Mod", bold, GUILayout.Width(300f));
+            GUILayout.Label("Settings", bold, GUILayout.Width(70f));
+            GUILayout.Label("", bold, GUILayout.Width(70f));
+            GUILayout.Label("Your choice", bold, GUILayout.Width(250f));
+            GUILayout.Label("What happens now, and why", bold);
+            GUILayout.EndHorizontal();
+            int n = 0;
+            foreach (PanelSync s in rows)
+            {
+                string key = RuleOverrides.Key(s.Guid);
+                bool edited = syncEdits.TryGetValue(key, out byte choice);
+                if (!edited) choice = s.Choice;
+                GUILayout.BeginHorizontal(n++ % 2 == 0 ? rowB : rowA);
+                GUILayout.Label(s.Name + (s.InCatalogue ? "" : "  · not in NOMNOM"), s.InCatalogue ? (edited ? changed : text) : bad, GUILayout.Width(300f));
+                GUILayout.Label(s.Settings.ToString(), text, GUILayout.Width(70f));
+                GUI.enabled = !s.Locked && choice != 0;
+                if (Confirm("syncreset:" + key, "Reset", 64f)) choice = 0;
+                GUILayout.Space(6f);
+                GUI.enabled = !s.Locked;
+                choice = (byte)GUILayout.Toolbar(Mathf.Clamp(choice, 0, 3), SyncLabels, toolbar, GUILayout.Width(244f));
+                GUI.enabled = true;
+                GUILayout.Space(6f);
+                string now = PanelLogic.ModeWords[Mathf.Clamp(s.Mode, 0, 2)] + " (" + s.Why + ")";
+                GUILayout.Label(s.Locked ? now + " — cannot be changed" : edited ? now + "  → changes on Apply" : now, edited ? changed : small);
+                GUILayout.EndHorizontal();
+                if (!s.Locked) { if (choice == s.Choice) syncEdits.Remove(key); else syncEdits[key] = choice; }
+            }
+        }
+
+        // A caution sign drawn in code, so it looks the same whatever fonts the PC has. Twice the shown size, to stay sharp when scaled.
+        private static Texture2D Caution()
+        {
+            const int size = 40;
+            var amber = new Color(1f, 0.78f, 0.16f);
+            var dark = new Color(0.10f, 0.10f, 0.10f);
+            var t = new Texture2D(size, size, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            for (int y = 0; y < size; y++)                              // row 0 is the bottom
+                for (int x = 0; x < size; x++)
+                {
+                    float half = (size - 2 - y) * 0.5f;                 // the triangle narrows towards the top
+                    float edge = Mathf.Clamp01(half - Mathf.Abs(x + 0.5f - size * 0.5f) + 0.5f) * Mathf.Clamp01(y - 0.5f);
+                    bool mark = x >= 18 && x <= 21 && ((y >= 12 && y <= 25) || (y >= 5 && y <= 8));   // the exclamation mark: stem and dot
+                    Color c = mark ? dark : amber;
+                    t.SetPixel(x, y, new Color(c.r, c.g, c.b, edge));
+                }
+            t.Apply();
+            return t;
+        }
+
+        // The catalogue's size and NOMNOM's last change to it, in the admin's own time; "" when no catalogue is in use.
+        private static string CatalogueFacts()
+        {
+            if (note.CatalogueBytes == 0) return "";
+            string size = note.CatalogueBytes < 1024 * 1024 ? Math.Max(1, note.CatalogueBytes / 1024) + " KB" : (note.CatalogueBytes / 1048576.0).ToString("0.0") + " MB";
+            if (note.CataloguePublished == 0) return "; the catalogue is " + size;
+            DateTime when = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(note.CataloguePublished).ToLocalTime();
+            return "; the catalogue is " + size + ", last updated " + when.ToString("yyyy-MM-dd HH:mm") + " local time";
         }
 
         // ---- Admins -------------------------------------------------------------------------------------------
@@ -413,6 +552,10 @@ namespace NOTCH.Panel
             if (policyEdit >= 0) actions.Add(new PanelAction { Kind = PanelLogic.ActPolicy, Key = "", Value = ((JoinPolicy)policyEdit).ToString() });
             if (unlistedEdit >= 0) actions.Add(new PanelAction { Kind = PanelLogic.ActUnlisted, Key = "", Value = unlistedEdit == 0 ? "Report" : "Ignore" });
             if (timeoutEdit >= 0) actions.Add(new PanelAction { Kind = PanelLogic.ActTimeout, Key = "", Value = timeoutEdit.ToString() });
+            foreach (PanelSync s in note.Sync ?? new PanelSync[0])
+                if (syncEdits.TryGetValue(RuleOverrides.Key(s.Guid), out byte choice)) actions.Add(new PanelAction { Kind = PanelLogic.ActSync, Key = s.Guid, Value = PanelLogic.SyncWords[Mathf.Clamp(choice, 0, 3)] });
+            if (LimitEdit > 0) actions.Add(new PanelAction { Kind = PanelLogic.ActSizeLimit, Key = "", Value = LimitEdit.ToString() });
+            if (notesKnown && actions.Count > 0) actions.Add(new PanelAction { Kind = PanelLogic.ActNotes, Key = "", Value = "" });   // so the table and status come back fresh
             if (actions.Count == 0 || server == null) return;
             awaitingApply = true;
             server.Send(new NotchPanelActionV1 { Protocol = Wire.ProtocolVersion, Actions = actions.ToArray() });

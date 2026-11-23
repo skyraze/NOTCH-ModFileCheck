@@ -35,11 +35,8 @@ namespace NOTCH.Panel
                     return;
                 }
                 PanelAction[] asked = msg.Actions ?? new PanelAction[0];
-                if (asked.Any(a => a.Kind == PanelLogic.ActNotes))
-                {
-                    sender.Send(new NotchPanelNoteV1 { Protocol = Wire.ProtocolVersion, Leftovers = Plugin.Leftovers.ToArray() });
-                    if (asked.All(a => a.Kind == PanelLogic.ActNotes)) return;      // nothing else was asked: no new menu state needed
-                }
+                bool wantNotes = asked.Any(a => a.Kind == PanelLogic.ActNotes);
+                if (wantNotes && asked.All(a => a.Kind == PanelLogic.ActNotes)) { sender.Send(BuildNote()); return; }   // nothing else was asked: no new menu state needed
                 var done = new List<string>();
                 bool ok = true;
                 foreach (PanelAction a in msg.Actions ?? new PanelAction[0])
@@ -55,8 +52,32 @@ namespace NOTCH.Panel
                 }
                 string status = done.Count == 0 ? "" : done.Count == 1 ? done[0] : (ok ? $"Saved {done.Count} changes." : "Some changes failed: " + string.Join(" ", done.Where(d => d.StartsWith("Could not") || d.StartsWith("Not "))));
                 sender.Send(BuildState(status, ok, open: false));
+                if (wantNotes) sender.Send(BuildNote());            // after the changes, so the table shows the result
             }
             catch (Exception e) { Plugin.Log.LogWarning("[menu] request failed: " + e.Message); }
+        }
+
+        /// <summary>The menu's second message: leftover files, the catalogue's state and the config sync table.</summary>
+        private static NotchPanelNoteV1 BuildNote()
+        {
+            NOTCH.Catalogue.CatalogueStatus status = NOTCH.Catalogue.CatalogueRunner.Status;
+            bool inUse = status != null && status.Version.Length > 0;
+            return new NotchPanelNoteV1
+            {
+                Protocol = Wire.ProtocolVersion,
+                Leftovers = Plugin.Leftovers.ToArray(),
+                Catalogue = NOTCH.Catalogue.CatalogueRunner.Report().Split('\n')[0],
+                Unmatched = inUse ? status.Unmatched.ToArray() : new string[0],
+                SizeLimitMB = (ushort)Plugin.CatalogueSizeLimitMB.Value,
+                CatalogueBytes = inUse ? (uint)Math.Min(status.Bytes, uint.MaxValue) : 0,
+                CataloguePublished = inUse && status.PublishedUtc.Year > 1970 ? (uint)(status.PublishedUtc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds : 0,
+                Sync = NOTCH.Sync.ConfigSend.Rows().OrderBy(r => r.Mod.Name, StringComparer.OrdinalIgnoreCase).Select(r => new PanelSync
+                {
+                    Guid = r.Mod.Guid, Name = r.Mod.Name, Why = r.Verdict.Why, Settings = (ushort)Math.Min(r.Settings, ushort.MaxValue),
+                    Choice = (byte)r.Choice, Mode = (byte)r.Verdict.Mode, Locked = r.Verdict.Locked,
+                    InCatalogue = !inUse || NOTCH.Catalogue.CatalogueRunner.Hits.ContainsKey(r.Mod.Guid),
+                }).ToArray(),
+            };
         }
 
         internal static bool IsAdmin(INetworkPlayer sender, out string who)
@@ -111,6 +132,22 @@ namespace NOTCH.Panel
                     if (!int.TryParse(value, out int seconds) || seconds < 1 || seconds > 6) { result = $"Could not set the wait to '{value}' (1–6 seconds)."; return false; }
                     Plugin.ReplyTimeoutSeconds.Value = seconds;
                     result = $"Wait for a player's mod list = {seconds} s."; return true;
+
+                case PanelLogic.ActSync:
+                {
+                    NOTCH.Sync.ConfigSend.Row row = NOTCH.Sync.ConfigSend.Rows().FirstOrDefault(r => string.Equals(r.Mod.Guid, key, StringComparison.OrdinalIgnoreCase));
+                    if (row.Mod == null) { result = $"Could not find a mod with settings called '{key}'."; return false; }
+                    if (row.Verdict.Locked) { result = $"Could not change {row.Mod.Name}: its settings are never sent ({row.Verdict.Why})."; return false; }
+                    if (!NOTCH.Sync.SyncChoices.TryWord(value, out NOTCH.Sync.SyncChoice choice)) { result = $"Could not set config sync to '{value}'."; return false; }
+                    RuleStore.SetSync(row.Mod.Guid, choice);
+                    result = $"{row.Mod.Name}: config sync = {(choice == NOTCH.Sync.SyncChoice.Auto ? "default" : value)}."; return true;
+                }
+                case PanelLogic.ActSizeLimit:
+                {
+                    if (!int.TryParse(value, out int mb) || mb < 1 || mb > 1024) { result = $"Could not set the catalogue size limit to '{value}' (1 to 1024 MB)."; return false; }
+                    Plugin.CatalogueSizeLimitMB.Value = mb;
+                    result = $"Catalogue size limit = {mb} MB."; return true;
+                }
 
                 case PanelLogic.ActAdminAdd:
                 case PanelLogic.ActAdminRemove:

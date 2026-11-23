@@ -7,6 +7,7 @@ using NOTCH.Admin;
 using NOTCH.Catalogue;
 using NOTCH.Consent;
 using NOTCH.Net;
+using NOTCH.Sync;
 using NuclearOption.ModdingApi;
 
 namespace NOTCH
@@ -17,12 +18,15 @@ namespace NOTCH
         internal static Dictionary<string, MismatchRule> Rules { get; private set; } = new Dictionary<string, MismatchRule>();
         internal static Dictionary<string, bool> Required { get; private set; } = new Dictionary<string, bool>();
         internal static Dictionary<string, string> Banned { get; private set; } = new Dictionary<string, string>();   // id → name
-        private static DateTime rulesStamp, requiredStamp, bannedStamp;
+        internal static Dictionary<string, SyncChoice> Sync { get; private set; } = new Dictionary<string, SyncChoice>();   // config sync, per mod
+        private static DateTime rulesStamp, requiredStamp, bannedStamp, syncStamp;
 
         private static string Dir => Path.Combine(Paths.ConfigPath, Plugin.Name);
         internal static string RulesPath => Path.Combine(Dir, RuleOverrides.FileName);
         internal static string RequiredPath => Path.Combine(Dir, RequiredRules.FileName);
         internal static string BannedPath => Path.Combine(Dir, BannedList.FileName);
+        internal static string SyncPath => Path.Combine(Dir, SyncChoices.FileName);
+        internal const string SyncShown = "BepInEx/config/NOTCH/" + SyncChoices.FileName;
         internal const string RulesShown = "BepInEx/config/NOTCH/" + RuleOverrides.FileName;
         internal const string RequiredShown = "BepInEx/config/NOTCH/" + RequiredRules.FileName;
         internal const string BannedShown = "BepInEx/config/NOTCH/" + BannedList.FileName;
@@ -47,6 +51,12 @@ namespace NOTCH
                 Banned = BannedList.Parse(bannedText, out List<string> bad);
                 Warn(BannedShown, bad, "");
                 if (!force) { Plugin.Log.LogInfo($"{BannedShown} changed: now {Banned.Count} banned mod(s)."); Commands.RefreshBanCommand(); }
+            }
+            if (Changed(SyncPath, ref syncStamp, force, out string syncText))
+            {
+                Sync = SyncChoices.Parse(syncText, out List<string> bad);
+                Warn(SyncShown, bad, " Use sync, warn or off.");
+                if (!force) Plugin.Log.LogInfo($"{SyncShown} changed: now {Sync.Count} per-mod config choice(s).");
             }
         }
 
@@ -89,6 +99,15 @@ namespace NOTCH
             RequiredRules.Apply(Plugin.KnownSet, Required);
         }
 
+        /// <summary>Sets (or, with Auto, clears) the config-sync choice for one mod and writes config-sync.yaml.</summary>
+        internal static void SetSync(string guid, SyncChoice choice)
+        {
+            Reload();
+            string key = SyncChoices.Key(guid);
+            if (choice == SyncChoice.Auto) Sync.Remove(key); else Sync[key] = choice;
+            Write(SyncPath, SyncChoices.Serialize(Sync, NameOf), ref syncStamp);
+        }
+
         /// <summary>Bans or un-bans one mod and writes banned.yaml.</summary>
         internal static void SetBanned(string guid, string name, bool banned)
         {
@@ -125,9 +144,9 @@ namespace NOTCH
             try
             {
                 string[] mods = modChoices.Select(c => c.Key).ToArray();
-                ChatCommands.RegisterServerCommand("notch", "NOTCH: show status, per-mod rules, required mods, banned mods, the admin list, or the NOMNOM catalogue check",
+                ChatCommands.RegisterServerCommand("notch", "NOTCH: show status, per-mod rules, required mods, banned mods, the admin list, the NOMNOM catalogue check, or config sync",
                     r => Reply(DoInfo(r.Args.Count > 0 ? r.Args[0] : "status")),
-                    new[] { ChatCommandArgument.FromChoices("show", new[] { "status", "rules", "required", "banned", "admins", "catalogue" }, optional: true) },
+                    new[] { ChatCommandArgument.FromChoices("show", new[] { "status", "rules", "required", "banned", "admins", "catalogue", "config" }, optional: true) },
                     PermissionLevel.Admin);
 
                 ChatCommands.RegisterServerCommand("notch-rule", "NOTCH: what happens when a player's copy of a mod does not match",
@@ -151,6 +170,11 @@ namespace NOTCH
                         new[] { ChatCommandArgument.FromChoices("action", new[] { "add", "remove" }), new ChatCommandArgument("player", ChatArgumentType.Player) },
                         PermissionLevel.Admin);
 
+                ChatCommands.RegisterServerCommand("notch-config", "NOTCH: what happens to a mod's settings on players' games (sync, warn, off)",
+                    r => Reply(r.Args.Count < 2 ? Bad("Usage: /notch-config <mod> <sync|warn|off|reset>") : DoConfig(r.Args[0], r.Args[1], r.Sender.SteamId.ToString())),
+                    new[] { ChatCommandArgument.FromChoices("mod", mods), ChatCommandArgument.FromChoices("setting", new[] { "sync", "warn", "off", "reset" }) },
+                    PermissionLevel.Admin);
+
                 ChatCommands.RegisterServerCommand("notch-notice", "NOTCH: read and answer this server's Network Access Notice (works until it is answered)",
                     r => Reply(ConsentRemote.Ask(r.Sender, out string text) ? Good(text) : Bad(text)),
                     null, PermissionLevel.Admin);
@@ -171,6 +195,7 @@ namespace NOTCH
                 Remote("notch-banned", a => DoInfo("banned"));
                 Remote("notch-admins", a => DoInfo("admins"));
                 Remote("notch-catalogue", a => DoInfo("catalogue"));
+                Remote("notch-config", a => a.Count == 0 ? DoInfo("config") : a.Count < 2 ? Bad("Usage: notch-config <mod> <sync|warn|off|reset>") : DoConfig(a[0], a[1], "remote command"));
                 Remote("notch-notice", a => ConsentRemote.FromMachine(a.Count > 0 ? a[0] : "", out string text) ? Good(text) : Bad(text));
                 Remote("notch-rule", a => a.Count < 2 ? Bad("Usage: notch-rule <mod> <kick|warn|off|reset>") : DoRule(a[0], a[1], "remote command"));
                 Remote("notch-require", a => a.Count < 2 ? Bad("Usage: notch-require <mod> <on|off|reset>") : DoRequire(a[0], a[1], "remote command"));
@@ -287,6 +312,15 @@ namespace NOTCH
                 return Good($"Banned ({RuleStore.Banned.Count}):\n" + string.Join("\n", RuleStore.Banned.OrderBy(b => b.Key).Select(b => $"- {(b.Value.Length > 0 ? b.Value + " (" + b.Key + ")" : b.Key)}")));
             }
             if (show == "catalogue") return Good(CatalogueRunner.Report());
+            if (show == "config")
+            {
+                if (Plugin.Policy.Value == JoinPolicy.Off) return Good("Config sync is off: Policy is Off, so nothing is sent.");
+                List<ConfigSend.Row> rows = ConfigSend.Rows();
+                if (rows.Count == 0) return Good("Config sync: no mod running on this server has settings.");
+                string policy = Plugin.Policy.Value == JoinPolicy.WarnOnly ? " Policy is WarnOnly, so players are only told of differences; nothing is changed." : "";
+                return Good($"Config sync ({rows.Count} mod(s) with settings).{policy}\n" + string.Join("\n", rows.OrderBy(r => r.Mod.Name)
+                    .Select(r => $"- {r.Mod.Name}: {SyncDecision.Word(r.Verdict.Mode)} ({r.Verdict.Why}), {r.Settings} setting(s)")));
+            }
             if (show == "admins")
             {
                 if (!AdminManager.Active) return Good("NOTCH's admin management is off on this server.");
@@ -322,6 +356,23 @@ namespace NOTCH
                            : rule == MismatchRule.Warn ? "a player with a different version or file joins and is told"
                            : "its version and file are no longer compared";
             return Good($"{mod.Name}: {word} — {meaning}. Applies from the next join.");
+        }
+
+        private static Result DoConfig(string modArg, string word, string who)
+        {
+            ModEntry mod = Find(modChoices, Plugin.KnownSet, modArg);
+            if (mod == null) return Bad($"'{modArg}' is not a mod this server knows.");
+            if (!SyncChoices.TryWord(word, out SyncChoice choice)) return Bad($"'{word}' is not a choice. Use sync, warn, off or reset.");
+            ConfigSend.Row row = ConfigSend.Rows().FirstOrDefault(r => r.Mod == mod);
+            if (row.Mod == null) return Bad($"{mod.Name} has no settings on this server, so there is nothing to sync.");
+            if (row.Verdict.Locked) return Bad($"{mod.Name}: its settings are never sent ({row.Verdict.Why}). This cannot be changed.");
+            RuleStore.SetSync(mod.Guid, choice);
+            row = ConfigSend.Rows().First(r => r.Mod == mod);
+            Plugin.Log.LogInfo($"[config] {who} set config sync for {mod.Name} to {(choice == SyncChoice.Auto ? "the default" : word.ToLowerInvariant())}.");
+            string meaning = row.Verdict.Mode == SyncMode.Sync ? "players get this server's values for the session"
+                           : row.Verdict.Mode == SyncMode.Warn ? "players are told which of their values differ; nothing is changed"
+                           : "its settings are not sent";
+            return Good($"{mod.Name}: {SyncDecision.Word(row.Verdict.Mode)} ({row.Verdict.Why}) — {meaning}. Applies from the next join.");
         }
 
         private static Result DoRequire(string modArg, string word, string who)

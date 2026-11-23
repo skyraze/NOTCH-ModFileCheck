@@ -17,6 +17,7 @@ namespace NOTCH.Sync
     public sealed class SyncMod
     {
         public string Guid = "", Version = "";
+        public bool Apply = true;                   // false = the player's game only compares and reports this mod's settings
         public List<SyncSetting> Settings = new List<SyncSetting>();
     }
 
@@ -39,7 +40,7 @@ namespace NOTCH.Sync
                 w.Write((ushort)list.Count);
                 foreach (SyncMod mod in list)
                 {
-                    w.Write(mod.Guid ?? ""); w.Write(mod.Version ?? ""); w.Write((ushort)mod.Settings.Count);
+                    w.Write(mod.Guid ?? ""); w.Write(mod.Version ?? ""); w.Write(mod.Apply); w.Write((ushort)mod.Settings.Count);
                     foreach (SyncSetting s in mod.Settings) { w.Write(s.Section ?? ""); w.Write(s.Key ?? ""); w.Write(s.Type ?? ""); w.Write(s.Value ?? ""); }
                 }
                 w.Flush();
@@ -59,7 +60,7 @@ namespace NOTCH.Sync
                     var mods = new List<SyncMod>(count);
                     for (int i = 0; i < count; i++)
                     {
-                        var mod = new SyncMod { Guid = Text(r), Version = Text(r) };
+                        var mod = new SyncMod { Guid = Text(r), Version = Text(r), Apply = r.ReadBoolean() };
                         int settings = r.ReadUInt16();
                         if (settings > MaxSettings) throw new InvalidDataException("too many settings");
                         for (int j = 0; j < settings; j++) mod.Settings.Add(new SyncSetting { Section = Text(r), Key = Text(r), Type = Text(r), Value = Text(r) });

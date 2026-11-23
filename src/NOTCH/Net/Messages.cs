@@ -68,11 +68,17 @@ namespace NOTCH.Net
         public byte[] Data;
     }
 
-    /// <summary>Server → an admin's client, when its menu asks: things the manager should know about (leftover mod files).</summary>
+    /// <summary>Server → an admin's client, when its menu asks: leftover mod files, the catalogue's state, and the config sync table.</summary>
     public struct NotchPanelNoteV1
     {
         public byte Protocol;
         public string[] Leftovers;
+        public string Catalogue;        // the state of the catalogue check, in one line
+        public string[] Unmatched;      // installed mods with no catalogue entry
+        public ushort SizeLimitMB;
+        public uint CatalogueBytes;     // size of the catalogue in use, 0 = none
+        public uint CataloguePublished; // when NOMNOM last changed it, seconds since 1970 UTC, 0 = not known
+        public PanelSync[] Sync;
     }
 
     /// <summary>Server → an admin's client: "show the notice you carry". No notice text travels, only its version.</summary>
@@ -200,15 +206,29 @@ namespace NOTCH.Net
             };
             Writer<NotchPanelNoteV1>.Write = (w, m) =>
             {
-                string[] lines = m.Leftovers ?? new string[0];
-                w.WriteByte(m.Protocol); w.WritePackedUInt32((uint)lines.Length);
-                foreach (string line in lines) w.WriteString(line.Length > 300 ? line.Substring(0, 300) : line);
+                w.WriteByte(m.Protocol); WriteLines(w, m.Leftovers);
+                w.WriteString(Short(m.Catalogue, 600)); WriteLines(w, m.Unmatched); w.WritePackedUInt32(m.SizeLimitMB);
+                w.WritePackedUInt32(m.CatalogueBytes); w.WritePackedUInt32(m.CataloguePublished);
+                PanelSync[] rows = m.Sync ?? new PanelSync[0];
+                w.WritePackedUInt32((uint)rows.Length);
+                foreach (PanelSync s in rows)
+                {
+                    w.WriteString(s.Guid ?? ""); w.WriteString(Short(s.Name, 120)); w.WriteString(Short(s.Why, 60)); w.WritePackedUInt32(s.Settings);
+                    w.WriteByte(s.Choice); w.WriteByte(s.Mode); w.WriteBoolean(s.Locked); w.WriteBoolean(s.InCatalogue);
+                }
             };
             Reader<NotchPanelNoteV1>.Read = r =>
             {
-                var m = new NotchPanelNoteV1 { Protocol = r.ReadByte() };
-                m.Leftovers = new string[Count(r)];
-                for (int i = 0; i < m.Leftovers.Length; i++) m.Leftovers[i] = SafeText.Clean(r.ReadString());
+                var m = new NotchPanelNoteV1 { Protocol = r.ReadByte(), Leftovers = ReadLines(r) };
+                m.Catalogue = SafeText.Clean(r.ReadString()); m.Unmatched = ReadLines(r); m.SizeLimitMB = (ushort)Math.Min(r.ReadPackedUInt32(), ushort.MaxValue);
+                m.CatalogueBytes = r.ReadPackedUInt32(); m.CataloguePublished = r.ReadPackedUInt32();
+                m.Sync = new PanelSync[Count(r)];
+                for (int i = 0; i < m.Sync.Length; i++)
+                    m.Sync[i] = new PanelSync
+                    {
+                        Guid = SafeText.Clean(r.ReadString()), Name = SafeText.Clean(r.ReadString()), Why = SafeText.Clean(r.ReadString()), Settings = (ushort)Math.Min(r.ReadPackedUInt32(), ushort.MaxValue),
+                        Choice = r.ReadByte(), Mode = r.ReadByte(), Locked = r.ReadBoolean(), InCatalogue = r.ReadBoolean(),
+                    };
                 return m;
             };
             Writer<NotchNoticeAskV1>.Write = (w, m) =>
@@ -240,6 +260,22 @@ namespace NOTCH.Net
                 return false;
             }
             return true;
+        }
+
+        private static string Short(string s, int max) => s == null ? "" : s.Length > max ? s.Substring(0, max) : s;
+
+        private static void WriteLines(NetworkWriter w, string[] lines)
+        {
+            lines = lines ?? new string[0];
+            w.WritePackedUInt32((uint)lines.Length);
+            foreach (string line in lines) w.WriteString(Short(line, 300));
+        }
+
+        private static string[] ReadLines(NetworkReader r)
+        {
+            var lines = new string[Count(r)];
+            for (int i = 0; i < lines.Length; i++) lines[i] = SafeText.Clean(r.ReadString());
+            return lines;
         }
 
         private static int Count(NetworkReader r)

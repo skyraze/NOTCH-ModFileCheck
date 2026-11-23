@@ -25,6 +25,8 @@ namespace NOTCH.Catalogue
         public string Version = "";                 // the catalogue version in use, "" when none
         public bool Unchanged;
         public int Matched;
+        public long Bytes;                          // size of the catalogue file in use; kept in memory only
+        public DateTime PublishedUtc;               // NOMNOM's Last-Modified for that file; MinValue = not given
         public List<string> Unmatched = new List<string>();
 
         public string Line()
@@ -143,18 +145,18 @@ namespace NOTCH.Catalogue
         private static void Work(Job job)
         {
             var status = new CatalogueStatus { WhenUtc = job.When, Version = job.VersionInUse };
-            if (job.Before != null) { status.Matched = job.Before.Matched; status.Unmatched = job.Before.Unmatched; }
+            if (job.Before != null) { status.Matched = job.Before.Matched; status.Unmatched = job.Before.Unmatched; status.Bytes = job.Before.Bytes; status.PublishedUtc = job.Before.PublishedUtc; }
             Dictionary<string, CatalogueHit> hits = null;
             var clock = Stopwatch.StartNew();
             try
             {
-                byte[] versionBytes = Fetch(CatalogueGate.VersionUrl, VersionMaxBytes, clock, out status.Verdict);
+                byte[] versionBytes = Fetch(CatalogueGate.VersionUrl, VersionMaxBytes, clock, out status.Verdict, out _);
                 string version = versionBytes == null ? "" : CatalogueCheck.CleanVersion(Encoding.UTF8.GetString(versionBytes));
                 if (versionBytes != null && version.Length == 0) { status.Verdict = CatalogueVerdict.NotCatalogue; status.Detail = "its version file is not a version"; }
                 else if (versionBytes != null && job.VersionInUse.Length > 0 && version == job.VersionInUse) status.Unchanged = true;
                 else if (versionBytes != null)
                 {
-                    byte[] file = Fetch(CatalogueGate.ManifestUrl, job.Ceiling, clock, out status.Verdict);
+                    byte[] file = Fetch(CatalogueGate.ManifestUrl, job.Ceiling, clock, out status.Verdict, out DateTime published);
                     if (file != null)
                     {
                         CatalogueRead read;
@@ -169,6 +171,7 @@ namespace NOTCH.Catalogue
                                 CatalogueMatched matched = CatalogueMatch.Run(job.Mods, read.Entries);
                                 hits = matched.ByGuid;
                                 status.Version = version; status.Matched = hits.Count; status.Unmatched = matched.Unmatched;
+                                status.Bytes = file.Length; status.PublishedUtc = published;
                             }
                         }
                     }
@@ -188,8 +191,9 @@ namespace NOTCH.Catalogue
         }
 
         /// <summary>Downloads one of the two NOMNOM files. Null = it was not kept; the verdict says why.</summary>
-        private static byte[] Fetch(string url, long ceiling, Stopwatch clock, out CatalogueVerdict verdict)
+        private static byte[] Fetch(string url, long ceiling, Stopwatch clock, out CatalogueVerdict verdict, out DateTime modified)
         {
+            modified = DateTime.MinValue;
             CatalogueGate.Require(url);                                 // the only-NOMNOM rule, checked at the point of connecting
             verdict = CatalogueVerdict.CouldNotConnect;
             int left = TimeLimitMs - (int)clock.ElapsedMilliseconds;
@@ -206,6 +210,7 @@ namespace NOTCH.Catalogue
                 {
                     if (response.StatusCode != HttpStatusCode.OK) return null;
                     if (response.ContentLength > ceiling) { verdict = CatalogueVerdict.TooLarge; return null; }
+                    try { if (response.Headers["Last-Modified"] != null) modified = response.LastModified.ToUniversalTime(); } catch { }   // a header of the same answer; no extra request
                     using (Stream body = response.GetResponseStream())
                         return CatalogueCheck.ReadCapped(body, ceiling, () => clock.ElapsedMilliseconds > TimeLimitMs, out verdict);
                 }

@@ -17,20 +17,37 @@ namespace NOTCH.Sync
         private static readonly string[] NeverSend = { Plugin.Guid, "com.bepis.bepinex.configurationmanager", Plugin.BlueprinterGuid };
         private static readonly System.Version FirstWithSync = new System.Version(0, 13, 0);
 
+        /// <summary>One loaded plugin as config sync sees it: how many settings it has declared and what happens to them.</summary>
+        internal struct Row { public ModEntry Mod; public int Settings; public SyncChoice Choice; public SyncVerdict Verdict; }
+
+        /// <summary>Every loaded plugin that has settings, with the decision for each. For the command, the menu and Build.</summary>
+        internal static List<Row> Rows()
+        {
+            var rows = new List<Row>();
+            foreach (ModEntry e in Plugin.KnownSet)
+            {
+                if (e.Kind != ModKind.Plugin || e.Origin != ModOrigin.Loaded) continue;
+                if (!Chainloader.PluginInfos.TryGetValue(e.Guid, out PluginInfo info) || info.Instance == null) continue;
+                int settings = info.Instance.Config.Keys.Count;
+                if (settings == 0) continue;                             // nothing declared: nothing to sync, nothing to choose
+                bool never = NeverSend.Any(n => string.Equals(n, e.Guid, StringComparison.OrdinalIgnoreCase));
+                CatalogueSide side = CatalogueRunner.Hits.TryGetValue(e.Guid, out CatalogueHit hit) ? hit.Side : CatalogueSide.None;
+                RuleStore.Sync.TryGetValue(SyncChoices.Key(e.Guid), out SyncChoice choice);
+                rows.Add(new Row { Mod = e, Settings = settings, Choice = choice, Verdict = SyncDecision.Decide(never, side, e.Required, choice) });
+            }
+            return rows;
+        }
+
         /// <summary>The settings to send, read from each mod's own live config, so what is sent is what the server is running with.</summary>
         internal static List<SyncMod> Build()
         {
             var mods = new List<SyncMod>();
-            foreach (ModEntry e in Plugin.KnownSet)
+            foreach (Row row in Rows())
             {
-                if (e.Kind != ModKind.Plugin || e.Origin != ModOrigin.Loaded || !e.Required) continue;       // required mods only, for now
-                if (NeverSend.Any(n => string.Equals(n, e.Guid, StringComparison.OrdinalIgnoreCase))) { Plugin.Dbg($"[sync] {e.Name}: not sent (on the never-send list)"); continue; }
-                if (CatalogueRunner.Hits.TryGetValue(e.Guid, out CatalogueHit hit) && (hit.Side == CatalogueSide.Client || hit.Side == CatalogueSide.Server))
-                { Plugin.Dbg($"[sync] {e.Name}: not sent (the catalogue marks it {hit.Side})"); continue; }
-                if (!Chainloader.PluginInfos.TryGetValue(e.Guid, out PluginInfo info) || info.Instance == null) { Plugin.Dbg($"[sync] {e.Name}: not sent (no running plugin to read)"); continue; }
-                ConfigFile config = info.Instance.Config;
-                Plugin.Dbg($"[sync] {e.Name}: {config.Keys.Count} setting(s) declared by the mod, {Unclaimed(config)} more in its file that this version of the mod does not use");
-                var mod = new SyncMod { Guid = e.Guid, Version = e.Version };
+                Plugin.Dbg($"[sync] {row.Mod.Name}: {SyncDecision.Word(row.Verdict.Mode)} ({row.Verdict.Why}), {row.Settings} setting(s)");
+                if (row.Verdict.Mode == SyncMode.Off) continue;
+                ConfigFile config = Chainloader.PluginInfos[row.Mod.Guid].Instance.Config;
+                var mod = new SyncMod { Guid = row.Mod.Guid, Version = row.Mod.Version, Apply = row.Verdict.Mode == SyncMode.Sync };
                 foreach (ConfigDefinition def in config.Keys.ToList())
                 {
                     ConfigEntryBase entry = config[def];
@@ -40,13 +57,6 @@ namespace NOTCH.Sync
                 if (mod.Settings.Count > 0) mods.Add(mod);
             }
             return mods;
-        }
-
-        /// <summary>How many values sit in the mod's config file that the running mod has not declared (leftovers of an older version, usually). Debug only.</summary>
-        private static int Unclaimed(ConfigFile config)
-        {
-            try { return (HarmonyLib.AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")?.GetValue(config) as System.Collections.ICollection)?.Count ?? -1; }
-            catch { return -1; }
         }
 
         internal static bool HasClientTag(ConfigEntryBase entry) =>
@@ -74,7 +84,7 @@ namespace NOTCH.Sync
                     bytes += data.Length; if (compressed) packed++;
                 }
                 int sent = mods.Count - leftOut.Count;
-                Plugin.Log.LogInfo($"[join] {who}: sent the settings of {sent} mod(s) to {(policy == JoinPolicy.WarnOnly ? "compare (policy WarnOnly)" : "apply")}: " +
+                Plugin.Log.LogInfo($"[join] {who}: sent the settings of {sent} mod(s) ({(policy == JoinPolicy.WarnOnly ? "all to compare, policy WarnOnly" : mods.Count(m => m.Apply) + " to apply, " + mods.Count(m => !m.Apply) + " to compare")}): " +
                                    $"{mods.Where(m => !leftOut.Contains(m.Guid)).Sum(m => m.Settings.Count)} setting(s), {bytes} bytes, {ConfigPack.Packets(bytes)} packet(s){(packed > 0 ? ", compressed" : "")}");
                 if (leftOut.Count > 0) Plugin.Log.LogWarning($"[join] Settings too large to send, left out: {string.Join(", ", leftOut)}");
             }

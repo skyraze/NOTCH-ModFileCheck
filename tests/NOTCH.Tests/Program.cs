@@ -471,5 +471,33 @@ Check("report: a file with no check is left alone", CheckReport.AddSettings("# o
 Check("report: text that could break the file is quoted", CheckReport.AddSettings(reportTwo, "a \"quoted\"\nline", null).Contains("  settings: \"a \\\"quoted\\\" line\""));
 
 Check("report: a check with problems keeps them when settings are added", CheckReport.AddSettings(CheckReport.Header + "\n\n- check: 2026-11-23 10:00:00\n  problems:\n    - mod: \"X (x)\"\n      issue: missing\n", "s", new[] { "d" }).Contains("    - mod: \"X (x)\"\n      issue: missing\n  settings: \"s\"\n  settings_detail:\n    - \"d\""));
+// ---- Stage 3a: which mods' settings sync, and the manager's per-mod choice ----
+SyncVerdict Verdict(bool never, CatalogueSide side, bool required, SyncChoice choice) => SyncDecision.Decide(never, side, required, choice);
+Check("decide: a required mod syncs by default", Verdict(false, CatalogueSide.None, true, SyncChoice.Auto).Mode == SyncMode.Sync && !Verdict(false, CatalogueSide.None, true, SyncChoice.Auto).Locked);
+Check("decide: a mod that is not required is not sent by default", Verdict(false, CatalogueSide.None, false, SyncChoice.Auto).Mode == SyncMode.Off);
+Check("decide: 'Both' in the catalogue changes nothing", Verdict(false, CatalogueSide.Both, true, SyncChoice.Auto).Mode == SyncMode.Sync && Verdict(false, CatalogueSide.Both, false, SyncChoice.Auto).Mode == SyncMode.Off);
+Check("decide: the manager can turn a required mod to warn or off", Verdict(false, CatalogueSide.None, true, SyncChoice.Warn).Mode == SyncMode.Warn && Verdict(false, CatalogueSide.None, true, SyncChoice.Off).Mode == SyncMode.Off);
+Check("decide: the manager can sync a mod that is not required", Verdict(false, CatalogueSide.Both, false, SyncChoice.Sync).Mode == SyncMode.Sync);
+Check("decide: a client-only mod is locked off, whatever the manager chose", Verdict(false, CatalogueSide.Client, true, SyncChoice.Sync).Mode == SyncMode.Off && Verdict(false, CatalogueSide.Client, true, SyncChoice.Sync).Locked);
+Check("decide: a server-only mod is locked off too", Verdict(false, CatalogueSide.Server, true, SyncChoice.Sync).Mode == SyncMode.Off && Verdict(false, CatalogueSide.Server, false, SyncChoice.Auto).Locked);
+Check("decide: the never-send list wins over everything", Verdict(true, CatalogueSide.Both, true, SyncChoice.Sync).Mode == SyncMode.Off && Verdict(true, CatalogueSide.None, true, SyncChoice.Sync).Locked);
+Check("decide: every outcome says why, briefly", new[] { Verdict(true, CatalogueSide.None, true, SyncChoice.Auto), Verdict(false, CatalogueSide.Client, true, SyncChoice.Auto), Verdict(false, CatalogueSide.Server, true, SyncChoice.Auto), Verdict(false, CatalogueSide.None, true, SyncChoice.Warn), Verdict(false, CatalogueSide.None, true, SyncChoice.Auto), Verdict(false, CatalogueSide.None, false, SyncChoice.Auto) }.All(v => v.Why.Length > 0 && v.Why.Length <= 26));
+Check("decide: the three words", SyncDecision.Word(SyncMode.Sync) == "sync" && SyncDecision.Word(SyncMode.Warn) == "warn" && SyncDecision.Word(SyncMode.Off) == "off");
+
+var syncFile = new Dictionary<string, SyncChoice> { ["blueprinter.shippack1"] = SyncChoice.Warn, ["some.\"odd\" id"] = SyncChoice.Off, ["com.example.sync"] = SyncChoice.Sync, ["left.alone"] = SyncChoice.Auto };
+string syncText = SyncChoices.Serialize(syncFile, id => id == "blueprinter.shippack1" ? "Blueprinter.shippack1" : "");
+Dictionary<string, SyncChoice> syncRead = SyncChoices.Parse(syncText, out List<string> syncBad);
+Check("choices file: written and read back", syncRead.Count == 3 && syncRead["blueprinter.shippack1"] == SyncChoice.Warn && syncRead["some.\"odd\" id"] == SyncChoice.Off && syncRead["com.example.sync"] == SyncChoice.Sync && syncBad.Count == 0);
+Check("choices file: a mod with no choice is not written", !syncText.Contains("left.alone"));
+Check("choices file: the mod's name is a note on its line", syncText.Contains("\"blueprinter.shippack1\": warn   # Blueprinter.shippack1"));
+Check("choices file: bad lines are reported, good ones kept", SyncChoices.Parse("\"a\": sync\n\"b\": maybe\nrubbish\n\"c\": reset\n# note\n\n\"D\": OFF", out List<string> syncBad2).Count == 2 && syncBad2.Count == 3);
+Check("choices file: ids are compared without capitals", SyncChoices.Parse("\"Mod.A\": Warn", out _)["mod.a"] == SyncChoice.Warn);
+Check("choices file: empty text is no choices", SyncChoices.Parse(null, out _).Count == 0);
+Check("choice words", SyncChoices.TryWord("SYNC", out SyncChoice w1) && w1 == SyncChoice.Sync && SyncChoices.TryWord("reset", out SyncChoice w2) && w2 == SyncChoice.Auto && !SyncChoices.TryWord("kick", out _));
+
+var mixedMods = new[] { new SyncMod { Guid = "applies", Apply = true, Settings = { new SyncSetting { Key = "k", Value = "1" } } }, new SyncMod { Guid = "warns", Apply = false, Settings = { new SyncSetting { Key = "k", Value = "1" } } } };
+List<SyncMod> mixedBack = ConfigPack.Read(ConfigPack.Write(mixedMods));
+Check("pack: each mod carries whether it is applied or only compared", mixedBack[0].Apply && !mixedBack[1].Apply);
+
 Console.WriteLine($"{passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

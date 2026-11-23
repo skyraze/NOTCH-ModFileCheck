@@ -2,7 +2,16 @@
 
 ## Unreleased (0.13.0, in development)
 
-Not released. Config sync works for required mods; the menu section, per-mod choices and author labels are still to come.
+Not released. Config sync works for required mods, with per-mod choices in the menu and by command; author labels are still to come.
+
+- **Per-mod config sync choice.** For each mod that has settings, a server manager can choose sync, warn or off, with
+  `/notch-config` or in the menu's Server tab. Kept in `BepInEx/config/NOTCH/config-sync.yaml`. `/notch config` lists
+  every mod with settings and what happens to it. Mods on the never-send list or marked client-only or server-only
+  in NOMNOM cannot be changed.
+- **Menu.** The Server tab has a new section with the catalogue's status, the size limit for a catalogue download, and
+  the per-mod table (closed until opened). It also shows the catalogue's size, when NOMNOM last changed it, and the
+  installed mods that have no catalogue entry. **Switching tabs with unapplied changes now asks first:** apply, discard or
+  stay.
 
 - **Config sync.** A server makes the settings of its required mods hold on every player's game while they are
   connected. The values are applied in memory when the player joins, before the map loads, and the player's own

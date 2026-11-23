@@ -64,17 +64,18 @@ namespace NOTCH.Sync
                 if (string.Equals(mod.Guid, Plugin.Guid, StringComparison.OrdinalIgnoreCase)) continue;                       // NOTCH's own settings are never touched
                 ConfigFile config = info.Instance.Config;
                 string name = info.Metadata.Name;
+                bool applyMod = apply && mod.Apply;                 // the server may send one mod to apply and another only to compare
                 foreach (SyncSetting s in mod.Settings)
                 {
                     var def = new ConfigDefinition(s.Section, s.Key);
                     ConfigEntryBase entry = config.ContainsKey(def) ? config[def] : null;
                     ApplyResult rule = ApplyRule.Decide(s, entry?.SettingType.FullName, entry != null && ConfigSend.HasClientTag(entry));
                     string label = $"{name}: [{s.Section}] {s.Key}";
-                    if (!apply && rule == ApplyResult.NotPlainText) rule = ApplyResult.Apply;      // nothing is applied on a WarnOnly server, so it is only compared
+                    if (!applyMod && rule == ApplyResult.NotPlainText) rule = ApplyResult.Apply;   // a mod that is only compared: nothing is applied, so nothing to block
                     if (rule != ApplyResult.Apply) { if (rule != ApplyResult.ClientOnly) lines.Add($"{label} {ApplyRule.Why(rule)}"); continue; }
                     string own = entry.GetSerializedValue();
                     if (own == s.Value) { same++; continue; }
-                    if (!apply) { differ++; lines.Add($"{label} differs: yours is {own}, the server's is {Shown(s.Value)}"); continue; }
+                    if (!applyMod) { differ++; lines.Add($"{label} differs: yours is {own}, the server's is {Shown(s.Value)}"); continue; }
 
                     if (!files.ContainsKey(config)) { files[config] = config.SaveOnConfigSet; config.SaveOnConfigSet = false; }   // stop saves before the first change
                     held.Add(new Held { Entry = entry, Own = own });
@@ -85,11 +86,11 @@ namespace NOTCH.Sync
                 }
             }
 
-            string summary = apply
-                ? (applied == 0 ? $"Config sync: your settings already match this server's ({same} checked)."
-                                : $"Config sync: this server set {applied} setting(s) for this session. Your own values come back when you leave.")
-                : (differ == 0 ? $"Config sync: your settings match this server's ({same} checked)."
-                               : $"Config sync: {differ} setting(s) differ from this server's. Nothing was changed (the server only warns); you may see differences in play.");
+            string summary = applied > 0
+                ? $"Config sync: this server set {applied} setting(s) for this session. Your own values come back when you leave." +
+                  (differ > 0 ? $" {differ} other setting(s) differ and were left alone (the server only warns about those)." : "")
+                : differ > 0 ? $"Config sync: {differ} setting(s) differ from this server's. Nothing was changed (the server only warns); you may see differences in play."
+                : $"Config sync: your settings match this server's ({same} checked).";
             lines.Insert(0, summary);
             LastLines = lines;
             Plugin.Log.LogInfo(summary);
@@ -98,8 +99,9 @@ namespace NOTCH.Sync
             WriteReport(summary, lines.Skip(1).ToList());
             if (applied > 0 || differ > 0)                      // only when there is something to tell
             {
-                string told = apply ? $"NOTCH: this server set {applied} mod setting(s) for this session. Your own values return when you leave."
-                                    : $"NOTCH: {differ} of your mod setting(s) differ from this server's. Nothing was changed.";
+                string told = applied > 0
+                    ? $"NOTCH: this server set {applied} mod setting(s) for this session. Your own values return when you leave." + (differ > 0 ? $" {differ} more differ and were left alone." : "")
+                    : $"NOTCH: {differ} of your mod setting(s) differ from this server's. Nothing was changed.";
                 Popup.Note(told);
                 pendingMessage = told + " Details: " + Plugin.ReportPathShown;
             }

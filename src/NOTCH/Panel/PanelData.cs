@@ -35,6 +35,17 @@ namespace NOTCH.Panel
         public string Key, Value;
     }
 
+    /// <summary>One row of the config sync table: a mod on the server that has settings, and what happens to them.</summary>
+    public struct PanelSync
+    {
+        public string Guid, Name, Why;
+        public ushort Settings;
+        public byte Choice;             // the manager's choice: 0 auto, 1 sync, 2 warn, 3 off
+        public byte Mode;               // what happens now: 0 off, 1 warn, 2 sync
+        public bool Locked;             // the manager cannot change it
+        public bool InCatalogue;        // false = not matched to a NOMNOM entry (shown highlighted)
+    }
+
     public static class PanelLogic
     {
         // Where a mod in the list comes from.
@@ -43,7 +54,11 @@ namespace NOTCH.Panel
         // Kinds of change.
         public const byte ActRequired = 1, ActRule = 2, ActModBan = 3, ActPolicy = 4, ActUnlisted = 5, ActTimeout = 6,
                           ActAdminAdd = 7, ActAdminRemove = 8, ActPlayerBan = 9, ActPlayerUnban = 10, ActPlayerKick = 11, ActRefresh = 12,
-                          ActNotes = 13;      // "send me the notes" (leftover files). Asked only of a server that knows it (0.13.0 and later)
+                          ActNotes = 13,      // "send me the notes" (leftovers, catalogue, config sync). Asked only of a server that knows it (0.13.0 and later)
+                          ActSync = 14, ActSizeLimit = 15;
+
+        public static readonly string[] SyncWords = { "reset", "sync", "warn", "off" };
+        public static readonly string[] ModeWords = { "off", "warn", "sync" };
 
         public static readonly string[] RequiredWords = { "auto", "on", "off" };
         public static readonly string[] RuleWords = { "auto", "kick", "warn", "off" };
