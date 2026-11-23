@@ -22,6 +22,11 @@ namespace NOTCH.Net
             {
                 ServerKnownSet = new WireMod[0];
                 Popup.Clear();
+                // Config sync: back to the player's own settings before talking to another server, and again whenever this connection ends.
+                NOTCH.Sync.ConfigApply.Restore("connecting to a server");
+                __instance.client.Disconnected.RemoveListener(OnDisconnected);
+                __instance.client.Disconnected.AddListener(OnDisconnected);
+                __instance.client.MessageHandler.RegisterHandler<NotchConfigV1>(NOTCH.Sync.ConfigApply.OnConfig, allowUnauthenticated: true);
                 __instance.client.MessageHandler.RegisterHandler<NotchInterrogateV1>(OnInterrogate, allowUnauthenticated: true);
                 __instance.client.MessageHandler.RegisterHandler<NotchVerdictV1>(OnVerdict, allowUnauthenticated: true);
                 NOTCH.Panel.PanelWindow.Close();
@@ -31,6 +36,8 @@ namespace NOTCH.Net
                 Plugin.Dbg("connecting: ready to answer a NOTCH server");
             }
         }
+
+        private static void OnDisconnected(ClientStoppedReason reason) => NOTCH.Sync.ConfigApply.Restore("left the server");
 
         private static void OnInterrogate(INetworkPlayer server, NotchInterrogateV1 ask)
         {

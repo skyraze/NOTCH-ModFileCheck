@@ -8,6 +8,7 @@ using NOTCH.Admin;
 using NOTCH.Panel;
 using NOTCH.Catalogue;
 using NOTCH.Consent;
+using NOTCH.Sync;
 using System.IO;
 
 int failed = 0, passed = 0;
@@ -388,5 +389,87 @@ Check("match: the nearest folder wins over one further up", CatalogueMatch.Run(n
 Check("match: folders above BepInEx are never used", CatalogueMatch.FoldersOf(@"D:\aryx.mc260\Game\BepInEx\plugins\Other\x.dll").SequenceEqual(new[] { "Other" }));
 Check("match: a path without a BepInEx folder uses only the file's own folder", CatalogueMatch.FoldersOf(@"D:\a\b\c\x.dll").SequenceEqual(new[] { "c" }));
 
+// ---- Stage 2a: packing settings for the network ----
+SyncMod MakeMod(string guid, int settings, string value = "true") => new SyncMod { Guid = guid, Version = "1.0.0", Settings = Enumerable.Range(0, settings).Select(i => new SyncSetting { Section = "General", Key = "Setting" + i, Type = "System.Boolean", Value = value }).ToList() };
+var twoMods = new[] { MakeMod("Blueprinter.shippack1", 15), MakeMod("com.nikkorap.blueprinter", 6) };
+byte[] syncPacked = ConfigPack.Write(twoMods);
+List<SyncMod> syncBack = ConfigPack.Read(syncPacked);
+Check("pack: mods and settings survive the round trip", syncBack.Count == 2 && syncBack[0].Guid == "Blueprinter.shippack1" && syncBack[0].Settings.Count == 15 && syncBack[1].Settings[5].Key == "Setting5" && syncBack[1].Settings[5].Value == "true" && syncBack[0].Version == "1.0.0");
+Check("pack: a typical server fits one packet", ConfigPack.Packets(syncPacked.Length) == 1);
+Check("pack: non-English text survives", ConfigPack.Read(ConfigPack.Write(new[] { new SyncMod { Guid = "m", Settings = { new SyncSetting { Key = "k", Value = "Ünïcødé ✓" } } } }))[0].Settings[0].Value == "Ünïcødé ✓");
+Check("pack: nothing packs and reads as nothing", ConfigPack.Read(ConfigPack.Write(null)).Count == 0);
+foreach (var (badBlock, whatBlock) in new[] { (new byte[0], "empty"), (new byte[] { 1 }, "one byte"), (syncPacked.Take(syncPacked.Length / 2).ToArray(), "cut off"), (syncPacked.Concat(new byte[] { 0 }).ToArray(), "extra bytes"), (new byte[] { 255, 255, 0, 0 }, "claims 65535 mods") })
+{
+    bool refused = false; try { ConfigPack.Read(badBlock); } catch (InvalidDataException) { refused = true; }
+    Check("pack: refuses a block that is " + whatBlock, refused);
+}
+bool longRefused = false; try { ConfigPack.Read(ConfigPack.Write(new[] { new SyncMod { Guid = "m", Settings = { new SyncSetting { Key = "k", Value = new string('a', ConfigPack.MaxText + 1) } } } })); } catch (InvalidDataException) { longRefused = true; }
+Check("pack: refuses text over the limit", longRefused);
+Check("packets: counted by 1180 bytes", ConfigPack.Packets(0) == 0 && ConfigPack.Packets(1) == 1 && ConfigPack.Packets(1180) == 1 && ConfigPack.Packets(1181) == 2);
+
+byte[] smallSent = ConfigPack.Squeeze(syncPacked, out bool smallSqueezed);
+Check("compress: one packet is sent as it is", !smallSqueezed && smallSent == syncPacked);
+byte[] bigPlain = ConfigPack.Write(Enumerable.Range(0, 40).Select(i => MakeMod("mod.number." + i, 15)));
+byte[] bigSent = ConfigPack.Squeeze(bigPlain, out bool bigSqueezed);
+Check("compress: a large block is compressed when that saves packets", bigSqueezed && ConfigPack.Packets(bigSent.Length) < ConfigPack.Packets(bigPlain.Length));
+Check("compress: it unpacks to the same bytes", ConfigPack.Unsqueeze(bigSent, true).SequenceEqual(bigPlain));
+var syncNoise = new byte[3000]; new Random(7).NextBytes(syncNoise);
+Check("compress: data that does not shrink is sent plain", ConfigPack.Squeeze(syncNoise, out bool noiseSqueezed) == syncNoise && !noiseSqueezed);
+bool bombStopped = false; try { ConfigPack.Unsqueeze(ConfigPack.Squeeze(new byte[500000], out _), true); } catch (InvalidDataException) { bombStopped = true; }
+Check("compress: a smallSent block that unpacks huge is stopped", bombStopped);
+bool junkStopped = false; try { ConfigPack.Unsqueeze(syncNoise, true); } catch (InvalidDataException) { junkStopped = true; }
+Check("compress: junk that is not compressed data is refused", junkStopped);
+
+List<byte[]> onePart = ConfigPack.Parts(twoMods, out List<string> noneLeft);
+Check("parts: a normal server is one part with nothing left out", onePart.Count == 1 && noneLeft.Count == 0);
+var manyMods = Enumerable.Range(0, 10).Select(i => MakeMod("big.mod." + i, 400, "a value of some length")).ToList();   // about 23 KB each: two to a part
+List<byte[]> manyParts = ConfigPack.Parts(manyMods, out List<string> manyLeft);
+Check("parts: a large set is split, every part within the limit", manyParts.Count > 1 && manyParts.All(p => p.Length <= ConfigPack.SplitAt));
+Check("parts: every mod arrives whole, in exactly one part", manyParts.SelectMany(p => ConfigPack.Read(p)).Select(m => m.Guid).SequenceEqual(manyMods.Select(m => m.Guid)) && manyLeft.Count == 0);
+List<byte[]> withGiant = ConfigPack.Parts(new[] { MakeMod("giant", 5000, new string('x', 60)), MakeMod("normal", 3) }, out List<string> giantLeft);
+Check("parts: a mod too big for one part is left out and named", giantLeft.SequenceEqual(new[] { "giant" }) && withGiant.Count == 1 && ConfigPack.Read(withGiant[0])[0].Guid == "normal");
+List<byte[]> cappedParts = ConfigPack.Parts(Enumerable.Range(0, 200).Select(i => MakeMod("heavy." + i, 400, "a value of some length")), out List<string> cappedLeft);
+Check("parts: beyond the overall ceiling the rest is left out and named", cappedParts.Count <= ConfigPack.MaxParts && cappedLeft.Count > 0 && cappedParts.SelectMany(p => ConfigPack.Read(p)).Count() + cappedLeft.Count == 200);
+
+var partsBin = new PartsBin();
+Check("arrival: nothing is handed over until the last part", partsBin.Add(0, manyParts.Count, manyParts[0]) == null);
+List<SyncMod> arrivedMods = null;
+for (int i = 1; i < manyParts.Count; i++) arrivedMods = partsBin.Add(i, manyParts.Count, manyParts[i]);
+Check("arrival: all parts in gives every mod", arrivedMods != null && arrivedMods.Count == 10);
+Check("arrival: a single part is complete at once", new PartsBin().Add(0, 1, syncPacked).Count == 2);
+var restartBin = new PartsBin(); restartBin.Add(0, 2, manyParts[0]);
+Check("arrival: a new first part starts over", restartBin.Add(0, 1, syncPacked).Count == 2);
+Check("arrival: impossible part numbers are ignored", new PartsBin().Add(3, 2, syncPacked) == null && new PartsBin().Add(0, 99, syncPacked) == null && new PartsBin().Add(-1, 1, syncPacked) == null);
+var dupBin = new PartsBin(); dupBin.Add(0, 2, manyParts[0]);
+Check("arrival: the same part twice does not complete the set", dupBin.Add(0, 2, manyParts[0]) == null);
+
+// ---- Stage 2a: whatBlock a server's value may do on a player's game ----
+foreach (string okText in new[] { "", "Heartland", "P_Corvette1", "medium-range, long-range", "Ünïcødé 42", new string('a', 64) })
+    Check("plain text: allowed '" + (okText.Length > 20 ? okText.Substring(0, 20) + "…" : okText) + "'", PlainText.Ok(okText));
+foreach (string noText in new[] { null, "https://example.com", "www.example.com", @"C:\Windows\system32", "/etc/passwd", "..", "a.b", "user@host", "a:b", "100%", "a=b", "line\nbreak", "tab\there", "semi;colon", "<tag>", new string('a', 65) })
+    Check("plain text: refused '" + (noText == null ? "(nothing)" : noText.Length > 20 ? noText.Substring(0, 20) + "…" : noText.Replace("\n", "\\n").Replace("\t", "\\t")) + "'", !PlainText.Ok(noText));
+SyncSetting Sent(string type, string value) => new SyncSetting { Section = "s", Key = "k", Type = type, Value = value };
+Check("apply: same setting, same type", ApplyRule.Decide(Sent("System.Boolean", "true"), "System.Boolean", false) == ApplyResult.Apply);
+Check("apply: the player's mod has noText such setting", ApplyRule.Decide(Sent("System.Boolean", "true"), null, false) == ApplyResult.NoSuchSetting);
+Check("apply: the type differs", ApplyRule.Decide(Sent("System.Int32", "5"), "System.Single", false) == ApplyResult.TypeDiffers);
+Check("apply: marked NotchClient by its author", ApplyRule.Decide(Sent("System.Boolean", "true"), "System.Boolean", true) == ApplyResult.ClientOnly);
+Check("apply: plain text is applied", ApplyRule.Decide(Sent("System.String", "P_Corvette1"), "System.String", false) == ApplyResult.Apply);
+Check("apply: a link in a text setting is not applied", ApplyRule.Decide(Sent("System.String", "https://example.com/x"), "System.String", false) == ApplyResult.NotPlainText);
+Check("apply: the text rule is for text settings only (a key binding passes)", ApplyRule.Decide(Sent("UnityEngine.KeyCode", "F + LeftControl"), "UnityEngine.KeyCode", false) == ApplyResult.Apply);
+Check("apply: a type that only claims to be text does not skip the rule", ApplyRule.Decide(Sent("System.Int32", "https://example.com"), "System.String", false) == ApplyResult.TypeDiffers);
+Check("apply: every outcome has wording", Enum.GetValues(typeof(ApplyResult)).Cast<ApplyResult>().All(r => ApplyRule.Why(r).Length > 0));
+
+// ---- Stage 2c: config sync in the player's report file ----
+string reportTwo = CheckReport.Header + "\n\n- check: 2026-11-23 10:00:00\n  server: \"A\"\n  policy: RequireNotch\n  result: joined, all mods match\n  problems: []\n\n- check: 2026-11-22 09:00:00\n  server: \"B\"\n  problems: []\n";
+string withSettings = CheckReport.AddSettings(reportTwo, "Config sync: this server set 2 setting(s).", new[] { "Probe: [Probe] Text = bravo (yours: alpha)", "Probe: [Probe] Path not applied" });
+Check("report: settings go into the newest check, before the older one", withSettings.IndexOf("  settings: \"Config sync: this server set 2 setting(s).\"") > withSettings.IndexOf("10:00:00") && withSettings.IndexOf("  settings:") < withSettings.IndexOf("09:00:00"));
+Check("report: each detail is a quoted line", withSettings.Contains("    - \"Probe: [Probe] Text = bravo (yours: alpha)\"") && withSettings.Contains("    - \"Probe: [Probe] Path not applied\""));
+Check("report: the older check is untouched and the blank line between checks stays", withSettings.Contains("  server: \"B\"\n  problems: []") && withSettings.Contains("\n\n- check: 2026-11-22 09:00:00"));
+Check("report: a second sync on the same check replaces the first", CheckReport.AddSettings(withSettings, "second", new string[0]).Split('\n').Count(l => l.StartsWith("  settings")) == 1 && !CheckReport.AddSettings(withSettings, "second", new string[0]).Contains("settings_detail"));
+Check("report: the next join's merge keeps the settings of the earlier check", CheckReport.Merge(withSettings, "- check: 2026-11-23 11:00:00\n  problems: []\n").Contains("    - \"Probe: [Probe] Text = bravo (yours: alpha)\""));
+Check("report: a file with no check is left alone", CheckReport.AddSettings("# only a header\n", "x", null) == "# only a header\n" && CheckReport.AddSettings(null, "x", null) == "");
+Check("report: text that could break the file is quoted", CheckReport.AddSettings(reportTwo, "a \"quoted\"\nline", null).Contains("  settings: \"a \\\"quoted\\\" line\""));
+
+Check("report: a check with problems keeps them when settings are added", CheckReport.AddSettings(CheckReport.Header + "\n\n- check: 2026-11-23 10:00:00\n  problems:\n    - mod: \"X (x)\"\n      issue: missing\n", "s", new[] { "d" }).Contains("    - mod: \"X (x)\"\n      issue: missing\n  settings: \"s\"\n  settings_detail:\n    - \"d\""));
 Console.WriteLine($"{passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

@@ -58,6 +58,16 @@ namespace NOTCH.Net
         public PanelAction[] Actions;
     }
 
+    /// <summary>Server → a player it just let in: the settings of the synced mods, as one part of a packed block. Apply = false means "compare only".</summary>
+    public struct NotchConfigV1
+    {
+        public byte Protocol;
+        public bool Apply;
+        public byte Part, Parts;
+        public bool Compressed;
+        public byte[] Data;
+    }
+
     /// <summary>Server → an admin's client, when its menu asks: things the manager should know about (leftover mod files).</summary>
     public struct NotchPanelNoteV1
     {
@@ -178,6 +188,16 @@ namespace NOTCH.Net
                 for (int i = 0; i < m.Actions.Length; i++) m.Actions[i] = new PanelAction { Kind = r.ReadByte(), Key = SafeText.Clean(r.ReadString()), Value = SafeText.Clean(r.ReadString()) };
                 return m;
             };
+            Writer<NotchConfigV1>.Write = (w, m) =>
+            {
+                w.WriteByte(m.Protocol); w.WriteBoolean(m.Apply); w.WriteByte(m.Part); w.WriteByte(m.Parts); w.WriteBoolean(m.Compressed);
+                w.WriteBytesAndSize(m.Data ?? new byte[0]);
+            };
+            Reader<NotchConfigV1>.Read = r => new NotchConfigV1
+            {
+                Protocol = r.ReadByte(), Apply = r.ReadBoolean(), Part = r.ReadByte(), Parts = r.ReadByte(), Compressed = r.ReadBoolean(),
+                Data = r.ReadBytesAndSize() ?? new byte[0],
+            };
             Writer<NotchPanelNoteV1>.Write = (w, m) =>
             {
                 string[] lines = m.Leftovers ?? new string[0];
@@ -209,6 +229,7 @@ namespace NOTCH.Net
                 MessagePacker.RegisterMessage<NotchVerdictV1>();
                 MessagePacker.RegisterMessage<NotchPanelStateV1>();
                 MessagePacker.RegisterMessage<NotchPanelActionV1>();
+                MessagePacker.RegisterMessage<NotchConfigV1>();
                 MessagePacker.RegisterMessage<NotchPanelNoteV1>();
                 MessagePacker.RegisterMessage<NotchNoticeAskV1>();
                 MessagePacker.RegisterMessage<NotchNoticeAnswerV1>();

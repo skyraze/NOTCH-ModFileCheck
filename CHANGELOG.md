@@ -2,7 +2,17 @@
 
 ## Unreleased (0.13.0, in development)
 
-Not released. This is the first part of config sync; nothing is synced yet.
+Not released. Config sync works for required mods; the menu section, per-mod choices and author labels are still to come.
+
+- **Config sync.** A server makes the settings of its required mods hold on every player's game while they are
+  connected. The values are applied in memory when the player joins, before the map loads, and the player's own
+  values come back on leaving; nothing is written to the player's config files. The player is told in the game's
+  message window and in the report file, setting by setting. With Policy `WarnOnly` the differences are listed and
+  nothing is changed. Never sent: NOTCH's own settings, Configuration Manager's, Blueprinter's own, any mod NOMNOM
+  marks client-only or server-only, and any setting its author marked `NotchClient`.
+- **Protection against a hostile server.** A value is applied only to a setting the player's own copy of the mod
+  has, of the same kind. A text setting only takes plain characters (letters, digits, spaces, hyphens, underscores,
+  commas; 64 at most), so it cannot be given a link or a file path.
 
 - **NOMNOM catalogue check.** A dedicated server, or a game while it hosts for other players, can read NOMNOM's
   public mod catalogue to learn whether a mod is meant for clients, servers or both. It runs in the background, at

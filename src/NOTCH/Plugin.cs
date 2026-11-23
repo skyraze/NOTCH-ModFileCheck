@@ -104,6 +104,9 @@ namespace NOTCH
             // Catalogue checks start from two moments: the server starting, and a mission loading.
             harmony.PatchAll(typeof(CatalogueRunner.ServerStartPatch));
             harmony.PatchAll(typeof(CatalogueRunner.MissionLoadPatch));
+            // Config sync: no config file of a synced mod is written while a server's values are in it; and a second way back to the player's own values.
+            harmony.PatchAll(typeof(NOTCH.Sync.ConfigApply.SavePatch));
+            GameManager.OnGameStateChanged.AddListener(() => { if (GameManager.gameState == GameState.Menu) NOTCH.Sync.ConfigApply.Restore("back in the main menu"); });
 
             joinExchangeOn = Wire.Register(Logger);
             if (joinExchangeOn)
@@ -114,6 +117,9 @@ namespace NOTCH
                 harmony.PatchAll(typeof(ClientJoin.OnClientConnectedPatch));
             }
         }
+
+        /// <summary>Quitting: put the player's own settings back first, so a mod that saves on exit saves the right values.</summary>
+        private void OnApplicationQuit() => NOTCH.Sync.ConfigApply.Restore("the game is closing");
 
         private static void Probe(string what, PlayerHandle h)
         {
@@ -139,7 +145,7 @@ namespace NOTCH
             RuleStore.Banned.ContainsKey(RuleOverrides.Key(e.Guid)) ? "BANNED: players can't join with it (see /notch banned)." : "Counted as an allowed client mod.";
 
         /// <summary>Unity calls this to draw immediate-mode UI: the join notice, the admin menu and the Network Access Notice.</summary>
-        private void OnGUI() { Popup.Draw(); NOTCH.Panel.PanelWindow.Draw(); ConsentWindow.Draw(); }
+        private void OnGUI() { Popup.Draw(); NOTCH.Panel.PanelWindow.Draw(); ConsentWindow.Draw(); NOTCH.Sync.ConfigApply.Tell(); }
 
         /// <summary>This server's name as players know it, or "" when it can't be told.</summary>
         internal static string ServerName()

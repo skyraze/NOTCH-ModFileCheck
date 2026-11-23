@@ -12,6 +12,7 @@ namespace NOTCH
     {
         private static string serverName = "";
         private static string header = "";
+        private static string note = "";            // config sync's line, when it has one
         private static List<string> lines;          // null = nothing to show
         private static Vector2 scroll;
         private static bool seenInMatch, withReport;
@@ -24,13 +25,16 @@ namespace NOTCH
 
         internal static void Show(string server, string headerLine, IEnumerable<string> problemLines, bool showReport = true)
         {
-            serverName = server ?? ""; header = headerLine; lines = problemLines.ToList(); withReport = showReport;
+            serverName = server ?? ""; header = headerLine; lines = problemLines.ToList(); withReport = showReport; note = "";
             scroll = Vector2.zero; seenInMatch = false;
         }
 
+        /// <summary>Adds a line to the notice if one is up (or about to be drawn). Without a notice it does nothing.</summary>
+        internal static void Note(string line) { if (lines != null) note = line ?? ""; }
+
         internal static void Clear()
         {
-            lines = null;
+            lines = null; note = "";
             if (blocker != null) Object.Destroy(blocker);
             blocker = null;
             ReleaseInput();
@@ -143,7 +147,7 @@ namespace NOTCH
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
             float sw = Screen.width / scale, sh = Screen.height / scale;
             // Grows with the number of issues up to a fixed height; beyond that the issue list scrolls.
-            float w = Mathf.Min(760f, sw - 40f), h = Mathf.Min(Mathf.Min((withReport ? 210f : 185f) + 40f * lines.Count, 590f), sh - 120f);
+            float w = Mathf.Min(760f, sw - 40f), h = Mathf.Min(Mathf.Min((withReport ? 210f : 185f) + (note.Length > 0 ? 44f : 0f) + 40f * lines.Count, 590f), sh - 120f);
             var box = new Rect((sw - w) / 2f, (sh - h) / 2f, w, h);
 
             GUI.DrawTexture(box, backdrop);
@@ -162,6 +166,7 @@ namespace NOTCH
 
             // Fixed bottom: where the details are, and the Close button.
             GUILayout.Space(6f);
+            if (note.Length > 0) { GUILayout.Label(note, centered); GUILayout.Space(4f); }
             if (withReport) GUILayout.Label("Full details: " + Plugin.ReportPathShown, centered);
             GUILayout.Space(8f);
             GUILayout.BeginHorizontal();

@@ -21,6 +21,7 @@
     <Compile Include="..\..\src\NOTCH\Consent\ConsentState.cs" />
     <Compile Include="..\..\src\NOTCH\Consent\Agreement.cs" />
     <Compile Include="..\..\src\NOTCH\Consent\AgreementText.cs" />
+    <Compile Include="..\..\src\NOTCH\Sync\ConfigPack.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Same major version as the copy the game ships (13.0). -->

@@ -102,7 +102,7 @@ namespace NOTCH.Net
 
                 long limitMs = Plugin.ReplyTimeoutSeconds.Value * 1000L;
                 var clock = Stopwatch.StartNew();
-                bool answered = false;
+                bool answered = false, sendSettings = false;
                 NotchTransponderV1 reply = default;
                 while (clock.ElapsedMilliseconds < limitMs)
                 {
@@ -147,6 +147,7 @@ namespace NOTCH.Net
                         Protocol = Wire.ProtocolVersion, Policy = (byte)policy, Refused = refuse,
                         ServerName = Plugin.ServerName(), Problems = problems.Select(p => p.ToWire()).ToArray(),
                     });
+                    sendSettings = !refuse;
                 }
                 else if (policy == JoinPolicy.WarnOnly)
                 {
@@ -164,6 +165,8 @@ namespace NOTCH.Net
                     if (!token.IsCancellationRequested) await auth.SendFailReason(player, refusal);
                     return AuthenticationResult.CreateFail("NOTCH: refused by policy " + policy, auth);   // 'finally' below undoes the Steam list entry
                 }
+                // Config sync: the server's settings follow the verdict, so they are in place before the player loads the map.
+                if (sendSettings) NOTCH.Sync.ConfigSend.SendTo(player, who, policy, reply.ClientMods);
                 admitted = true;
                 return result;                                  // the game's own "yes"
             }

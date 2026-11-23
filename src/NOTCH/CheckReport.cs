@@ -77,6 +77,27 @@ namespace NOTCH
             return sb.ToString();
         }
 
+        /// <summary>Adds what config sync did to the newest check in the file. A file with no check in it is returned unchanged.</summary>
+        public static string AddSettings(string existingFile, string summary, IList<string> details)
+        {
+            List<string> lines = (existingFile ?? "").Replace("\r\n", "\n").Split('\n').ToList();
+            int start = lines.FindIndex(l => l.StartsWith(EntryStart));
+            if (start < 0) return existingFile ?? "";
+            int end = lines.FindIndex(start + 1, l => l.StartsWith(EntryStart));
+            if (end < 0) end = lines.Count;
+            while (end > start + 1 && lines[end - 1].Trim().Length == 0) end--;     // keep the blank line between checks where it is
+            int earlier = lines.FindIndex(start + 1, end - start - 1, l => l.StartsWith("  settings:"));   // the settings block is always last in a check
+            if (earlier >= 0) { lines.RemoveRange(earlier, end - earlier); end = earlier; }                // a second sync on the same check replaces the first
+            var block = new List<string> { "  settings: " + Quote(summary) };
+            if (details != null && details.Count > 0)
+            {
+                block.Add("  settings_detail:");
+                block.AddRange(details.Select(d => "    - " + Quote(d)));
+            }
+            lines.InsertRange(end, block);
+            return string.Join("\n", lines);
+        }
+
         /// <summary>Double-quoted YAML text; line breaks and control characters become a space.</summary>
         public static string Quote(string s) => "\"" + Flatten(s).Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
