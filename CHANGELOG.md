@@ -2,7 +2,27 @@
 
 ## Unreleased (0.13.0, in development)
 
-Not released. Config sync works for required mods, with per-mod choices in the menu and by command; author labels are still to come.
+Not released. Config sync works for required mods, with per-mod choices in the menu and by command, and follows the
+author's label. A synced setting changed mid-session is put back.
+
+- **A synced setting stays synced.** If a synced setting is changed on a player's game while they are connected, NOTCH
+  sets it back to the server's value. It reacts only when a change happens; nothing is polled. Settings that are not
+  synced, or that the mod's author marked `NotchClient`, are the player's own and are left alone.
+- **Guard against a mod fighting over a setting (experimental).** If the same setting has to be put back 3 times
+  within 10 seconds, the server tells that player's game to stop putting it back and records it. The two numbers are
+  server settings (`RevertCount`, `RevertSeconds`), also in the menu. A game that does not acknowledge the stop within
+  30 seconds is dropped from the server. Each player's game also has a fixed limit of its own (20 in 10 seconds).
+  The menu's Server tab and `/notch config` list what was stopped, for whom, and why. The list is kept across
+  restarts until an admin removes the entries (in the menu, or `/notch-config-clear` for all of them).
+- **Menu notices.** The Mods tab shows a notice when settings have been stopped, beside the one for leftover files.
+  Each can be dismissed for now, or hidden with "Don't show again" until something new of that kind happens.
+- **Fixed:** a setting the player changed on a synced mod during a session (one that is not synced) was not written
+  to their config file on leaving. It is now.
+
+- **Author's label for config sync.** A mod maker can add `[assembly: AssemblyMetadata("NotchConfigSync", "...")]`:
+  `Self` (the mod syncs itself; NOTCH leaves it alone), `Notch` (use NOTCH's sync, even if the mod is not required)
+  or `Off` (never sync). `Self` and `Off` cannot be overridden by a server manager; a `Notch` mod can still be set to
+  warn or off. A mod with no label that carries a known sync library (ServerSync, Jotunn, CSync) is left alone.
 
 - **Per-mod config sync choice.** For each mod that has settings, a server manager can choose sync, warn or off, with
   `/notch-config` or in the menu's Server tab. Kept in `BepInEx/config/NOTCH/config-sync.yaml`. `/notch config` lists

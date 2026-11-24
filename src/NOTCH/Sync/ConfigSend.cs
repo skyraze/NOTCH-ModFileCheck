@@ -33,7 +33,7 @@ namespace NOTCH.Sync
                 bool never = NeverSend.Any(n => string.Equals(n, e.Guid, StringComparison.OrdinalIgnoreCase));
                 CatalogueSide side = CatalogueRunner.Hits.TryGetValue(e.Guid, out CatalogueHit hit) ? hit.Side : CatalogueSide.None;
                 RuleStore.Sync.TryGetValue(SyncChoices.Key(e.Guid), out SyncChoice choice);
-                rows.Add(new Row { Mod = e, Settings = settings, Choice = choice, Verdict = SyncDecision.Decide(never, side, e.Required, choice) });
+                rows.Add(new Row { Mod = e, Settings = settings, Choice = choice, Verdict = SyncDecision.Decide(never, SyncLabels.Parse(e.ConfigSyncTag), e.OwnSync, side, e.Required, choice) });
             }
             return rows;
         }
@@ -84,6 +84,7 @@ namespace NOTCH.Sync
                     bytes += data.Length; if (compressed) packed++;
                 }
                 int sent = mods.Count - leftOut.Count;
+                RevertServer.Note(player, who, policy == JoinPolicy.WarnOnly ? new SyncMod[0] : mods.Where(m => m.Apply && !leftOut.Contains(m.Guid)));
                 Plugin.Log.LogInfo($"[join] {who}: sent the settings of {sent} mod(s) ({(policy == JoinPolicy.WarnOnly ? "all to compare, policy WarnOnly" : mods.Count(m => m.Apply) + " to apply, " + mods.Count(m => !m.Apply) + " to compare")}): " +
                                    $"{mods.Where(m => !leftOut.Contains(m.Guid)).Sum(m => m.Settings.Count)} setting(s), {bytes} bytes, {ConfigPack.Packets(bytes)} packet(s){(packed > 0 ? ", compressed" : "")}");
                 if (leftOut.Count > 0) Plugin.Log.LogWarning($"[join] Settings too large to send, left out: {string.Join(", ", leftOut)}");

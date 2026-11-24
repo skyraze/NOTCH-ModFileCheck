@@ -36,6 +36,7 @@ namespace NOTCH.Panel
                 }
                 PanelAction[] asked = msg.Actions ?? new PanelAction[0];
                 bool wantNotes = asked.Any(a => a.Kind == PanelLogic.ActNotes);
+                asking = who;
                 if (wantNotes && asked.All(a => a.Kind == PanelLogic.ActNotes)) { sender.Send(BuildNote()); return; }   // nothing else was asked: no new menu state needed
                 var done = new List<string>();
                 bool ok = true;
@@ -58,6 +59,8 @@ namespace NOTCH.Panel
         }
 
         /// <summary>The menu's second message: leftover files, the catalogue's state and the config sync table.</summary>
+        private static string asking = "";          // the admin whose request is being handled: notices are hidden per admin
+
         private static NotchPanelNoteV1 BuildNote()
         {
             NOTCH.Catalogue.CatalogueStatus status = NOTCH.Catalogue.CatalogueRunner.Status;
@@ -69,6 +72,10 @@ namespace NOTCH.Panel
                 Catalogue = NOTCH.Catalogue.CatalogueRunner.Report().Split('\n')[0],
                 Unmatched = inUse ? status.Unmatched.ToArray() : new string[0],
                 SizeLimitMB = (ushort)Plugin.CatalogueSizeLimitMB.Value,
+                RevertCount = (byte)Plugin.RevertCount.Value, RevertSeconds = (byte)Plugin.RevertSeconds.Value,
+                Events = NOTCH.Sync.RevertServer.Events,
+                QuietStops = NOTCH.Sync.RevertServer.Seen.StopsQuiet(asking, NOTCH.Sync.RevertServer.Log),
+                QuietLeftovers = NOTCH.Sync.RevertServer.Seen.LeftoversQuiet(asking, Plugin.Leftovers),
                 CatalogueBytes = inUse ? (uint)Math.Min(status.Bytes, uint.MaxValue) : 0,
                 CataloguePublished = inUse && status.PublishedUtc.Year > 1970 ? (uint)(status.PublishedUtc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds : 0,
                 Sync = NOTCH.Sync.ConfigSend.Rows().OrderBy(r => r.Mod.Name, StringComparer.OrdinalIgnoreCase).Select(r => new PanelSync
@@ -147,6 +154,22 @@ namespace NOTCH.Panel
                     if (!int.TryParse(value, out int mb) || mb < 1 || mb > 1024) { result = $"Could not set the catalogue size limit to '{value}' (1 to 1024 MB)."; return false; }
                     Plugin.CatalogueSizeLimitMB.Value = mb;
                     result = $"Catalogue size limit = {mb} MB."; return true;
+                }
+                case PanelLogic.ActStopRemove:
+                    return NOTCH.Sync.RevertServer.Remove(value, out result);
+                case PanelLogic.ActNoticeQuiet:
+                    return NOTCH.Sync.RevertServer.Quiet(asking, key, out result);
+                case PanelLogic.ActRevertCount:
+                {
+                    if (!int.TryParse(value, out int n) || n < 1 || n > 20) { result = $"Could not set the put-back count to '{value}' (1 to 20)."; return false; }
+                    Plugin.RevertCount.Value = n;
+                    result = $"Stop after {n} put-back(s)."; return true;
+                }
+                case PanelLogic.ActRevertSeconds:
+                {
+                    if (!int.TryParse(value, out int n) || n < 5 || n > 60) { result = $"Could not set the put-back window to '{value}' (5 to 60 seconds)."; return false; }
+                    Plugin.RevertSeconds.Value = n;
+                    result = $"Put-backs are counted over {n} s."; return true;
                 }
 
                 case PanelLogic.ActAdminAdd:

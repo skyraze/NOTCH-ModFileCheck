@@ -55,7 +55,9 @@ namespace NOTCH.Panel
         public const byte ActRequired = 1, ActRule = 2, ActModBan = 3, ActPolicy = 4, ActUnlisted = 5, ActTimeout = 6,
                           ActAdminAdd = 7, ActAdminRemove = 8, ActPlayerBan = 9, ActPlayerUnban = 10, ActPlayerKick = 11, ActRefresh = 12,
                           ActNotes = 13,      // "send me the notes" (leftovers, catalogue, config sync). Asked only of a server that knows it (0.13.0 and later)
-                          ActSync = 14, ActSizeLimit = 15;
+                          ActSync = 14, ActSizeLimit = 15, ActRevertCount = 16, ActRevertSeconds = 17,
+                          ActStopRemove = 18,     // value = an entry's number, or "all"
+                          ActNoticeQuiet = 19;    // key = "stops" or "leftovers": hide that notice for this admin until something new happens
 
         public static readonly string[] SyncWords = { "reset", "sync", "warn", "off" };
         public static readonly string[] ModeWords = { "off", "warn", "sync" };

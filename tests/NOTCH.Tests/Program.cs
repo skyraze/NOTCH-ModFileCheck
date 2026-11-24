@@ -472,7 +472,23 @@ Check("report: text that could break the file is quoted", CheckReport.AddSetting
 
 Check("report: a check with problems keeps them when settings are added", CheckReport.AddSettings(CheckReport.Header + "\n\n- check: 2026-11-23 10:00:00\n  problems:\n    - mod: \"X (x)\"\n      issue: missing\n", "s", new[] { "d" }).Contains("    - mod: \"X (x)\"\n      issue: missing\n  settings: \"s\"\n  settings_detail:\n    - \"d\""));
 // ---- Stage 3a: which mods' settings sync, and the manager's per-mod choice ----
-SyncVerdict Verdict(bool never, CatalogueSide side, bool required, SyncChoice choice) => SyncDecision.Decide(never, side, required, choice);
+SyncVerdict Verdict(bool never, CatalogueSide side, bool required, SyncChoice choice) => SyncDecision.Decide(never, SyncLabel.None, "", side, required, choice);
+
+// ---- Stage 4a/4b: the author's label and a mod's own sync ----
+SyncVerdict ByLabel(SyncLabel label, string ownSync, CatalogueSide side, bool required, SyncChoice choice) => SyncDecision.Decide(false, label, ownSync, side, required, choice);
+Check("label: the three words are read without regard to capitals, anything else is no label", SyncLabels.Parse("self") == SyncLabel.Self && SyncLabels.Parse(" NOTCH ") == SyncLabel.Notch && SyncLabels.Parse("Off") == SyncLabel.Off && SyncLabels.Parse("yes") == SyncLabel.None && SyncLabels.Parse(null) == SyncLabel.None);
+Check("label: Self is off and locked, even for a required mod the manager set to sync", ByLabel(SyncLabel.Self, "", CatalogueSide.None, true, SyncChoice.Sync).Mode == SyncMode.Off && ByLabel(SyncLabel.Self, "", CatalogueSide.None, true, SyncChoice.Sync).Locked);
+Check("label: Off is off and locked", ByLabel(SyncLabel.Off, "", CatalogueSide.Both, true, SyncChoice.Sync).Mode == SyncMode.Off && ByLabel(SyncLabel.Off, "", CatalogueSide.Both, true, SyncChoice.Auto).Locked);
+Check("label: Notch syncs a mod that is not required", ByLabel(SyncLabel.Notch, "", CatalogueSide.None, false, SyncChoice.Auto).Mode == SyncMode.Sync && !ByLabel(SyncLabel.Notch, "", CatalogueSide.None, false, SyncChoice.Auto).Locked);
+Check("label: Notch outranks the catalogue's client-only mark", ByLabel(SyncLabel.Notch, "", CatalogueSide.Client, false, SyncChoice.Auto).Mode == SyncMode.Sync);
+Check("label: Notch outranks sync code found in the mod", ByLabel(SyncLabel.Notch, "ServerSync", CatalogueSide.None, true, SyncChoice.Auto).Mode == SyncMode.Sync);
+Check("label: the manager can turn a Notch-labelled mod to warn or off", ByLabel(SyncLabel.Notch, "", CatalogueSide.None, true, SyncChoice.Warn).Mode == SyncMode.Warn && ByLabel(SyncLabel.Notch, "", CatalogueSide.None, true, SyncChoice.Off).Mode == SyncMode.Off);
+Check("label: the never-send list still wins over Notch", SyncDecision.Decide(true, SyncLabel.Notch, "", CatalogueSide.None, true, SyncChoice.Sync).Mode == SyncMode.Off);
+Check("own sync: with no label it is off and locked, and says which library", ByLabel(SyncLabel.None, "ServerSync", CatalogueSide.None, true, SyncChoice.Sync).Mode == SyncMode.Off && ByLabel(SyncLabel.None, "ServerSync", CatalogueSide.None, true, SyncChoice.Sync).Locked && ByLabel(SyncLabel.None, "ServerSync", CatalogueSide.None, true, SyncChoice.Auto).Why.Contains("ServerSync"));
+Check("own sync: found as a referenced file", SyncLabels.OwnSync(new[] { "UnityEngine", "Jotunn", "BepInEx" }) == "Jotunn" && SyncLabels.OwnSync(new[] { "com.sigurd.csync" }) == "CSync");
+Check("own sync: found as a namespace packed inside the mod", SyncLabels.OwnSync(new[] { "MyMod", "ServerSync", "" }) == "ServerSync" && SyncLabels.OwnSync(new[] { "CSync.Lib" }) == "CSync");
+Check("own sync: a name that only contains the word is not a match", SyncLabels.OwnSync(new[] { "MyServerSyncHelper", "NotJotunn.Tools", "Sync" }) == "" && SyncLabels.OwnSync(null) == "" && SyncLabels.OwnSync(new string[] { null, "" }) == "");
+Check("label and own sync: every reason is short enough for the table", new[] { ByLabel(SyncLabel.Self, "", CatalogueSide.None, true, SyncChoice.Auto), ByLabel(SyncLabel.Off, "", CatalogueSide.None, true, SyncChoice.Auto), ByLabel(SyncLabel.Notch, "", CatalogueSide.None, true, SyncChoice.Auto), ByLabel(SyncLabel.None, "ServerSync", CatalogueSide.None, true, SyncChoice.Auto) }.All(v => v.Why.Length > 0 && v.Why.Length <= 40));
 Check("decide: a required mod syncs by default", Verdict(false, CatalogueSide.None, true, SyncChoice.Auto).Mode == SyncMode.Sync && !Verdict(false, CatalogueSide.None, true, SyncChoice.Auto).Locked);
 Check("decide: a mod that is not required is not sent by default", Verdict(false, CatalogueSide.None, false, SyncChoice.Auto).Mode == SyncMode.Off);
 Check("decide: 'Both' in the catalogue changes nothing", Verdict(false, CatalogueSide.Both, true, SyncChoice.Auto).Mode == SyncMode.Sync && Verdict(false, CatalogueSide.Both, false, SyncChoice.Auto).Mode == SyncMode.Off);
@@ -498,6 +514,70 @@ Check("choice words", SyncChoices.TryWord("SYNC", out SyncChoice w1) && w1 == Sy
 var mixedMods = new[] { new SyncMod { Guid = "applies", Apply = true, Settings = { new SyncSetting { Key = "k", Value = "1" } } }, new SyncMod { Guid = "warns", Apply = false, Settings = { new SyncSetting { Key = "k", Value = "1" } } } };
 List<SyncMod> mixedBack = ConfigPack.Read(ConfigPack.Write(mixedMods));
 Check("pack: each mod carries whether it is applied or only compared", mixedBack[0].Apply && !mixedBack[1].Apply);
+
+// ---- Stage 4c: the put-back guard ----
+var guardWindow = new RevertWindow();
+Check("guard window: counts events inside the window", guardWindow.Add(0, 10) == 1 && guardWindow.Add(4, 10) == 2 && guardWindow.Add(9, 10) == 3);
+Check("guard window: old events fall out", guardWindow.Add(12, 10) == 3 && guardWindow.Add(30, 10) == 1);
+
+var guardA = new GuardTracker();
+Check("guard: below the count nothing happens", guardA.Report("s", RevertKind.PutBack, 0, 3, 10, out _) == GuardAction.None && guardA.Report("s", RevertKind.PutBack, 1, 3, 10, out _) == GuardAction.None);
+Check("guard: at the count the server sends a stop", guardA.Report("s", RevertKind.PutBack, 2, 3, 10, out string guardNone) == GuardAction.SendStop && guardNone == null);
+Check("guard: put-backs still in flight after the stop are ignored", guardA.Report("s", RevertKind.PutBack, 2.1, 3, 10, out _) == GuardAction.None);
+Check("guard: the acknowledgement settles it", guardA.Report("s", RevertKind.Ack, 2.5, 3, 10, out string guardAck) == GuardAction.Settled && guardAck == GuardTracker.ByServer);
+Check("guard: nothing more happens to a settled setting", guardA.Report("s", RevertKind.PutBack, 3, 3, 10, out _) == GuardAction.None && guardA.Report("s", RevertKind.Ack, 3, 3, 10, out _) == GuardAction.None && guardA.Report("s", RevertKind.SafetyNet, 3, 3, 10, out _) == GuardAction.None && guardA.Overdue(999).Count == 0);
+
+var guardB = new GuardTracker();
+guardB.Report("s", RevertKind.PutBack, 0, 1, 10, out _);
+Check("guard race: the safety net arriving while a stop is waiting settles it as the safety net", guardB.Report("s", RevertKind.SafetyNet, 0.2, 1, 10, out string guardNet) == GuardAction.Settled && guardNet == GuardTracker.BySafetyNet);
+Check("guard race: the acknowledgement that follows is ignored, and nobody is dropped", guardB.Report("s", RevertKind.Ack, 0.3, 1, 10, out _) == GuardAction.None && guardB.Overdue(999).Count == 0);
+
+var guardC = new GuardTracker();
+Check("guard: the safety net before the server reached its count", guardC.Report("s", RevertKind.SafetyNet, 0, 3, 10, out string guardNet2) == GuardAction.Settled && guardNet2 == GuardTracker.BySafetyNet && guardC.Report("s", RevertKind.PutBack, 1, 1, 10, out _) == GuardAction.None);
+Check("guard: an acknowledgement nobody asked for is ignored", new GuardTracker().Report("s", RevertKind.Ack, 0, 3, 10, out _) == GuardAction.None);
+
+var guardD = new GuardTracker();
+guardD.Report("one", RevertKind.PutBack, 0, 1, 10, out _);
+guardD.Report("two", RevertKind.PutBack, 20, 1, 10, out _);
+Check("guard: no answer is not overdue before the wait is up", guardD.Overdue(29).Count == 0);
+List<string> guardLate = guardD.Overdue(30);
+Check("guard: after the wait the unanswered stop is overdue, per setting", guardLate.Count == 1 && guardLate[0] == "one");
+Check("guard: an overdue setting is settled and reported once", guardD.Overdue(31).Count == 0 && guardD.Report("one", RevertKind.Ack, 32, 1, 10, out _) == GuardAction.None && guardD.Overdue(50).Count == 1);
+Check("guard: settings are counted separately", new Func<bool>(() => { var g = new GuardTracker(); g.Report("a", RevertKind.PutBack, 0, 2, 10, out _); return g.Report("b", RevertKind.PutBack, 1, 2, 10, out _) == GuardAction.None && g.Report("a", RevertKind.PutBack, 2, 2, 10, out _) == GuardAction.SendStop; })());
+Check("guard: slow changes spread wider than the window never trip it", new Func<bool>(() => { var g = new GuardTracker(); for (int i = 0; i < 50; i++) if (g.Report("a", RevertKind.PutBack, i * 6, 3, 10, out _) != GuardAction.None) return false; return true; })());
+Check("guard: the three result lines", GuardTracker.ByServer == "Stopped by server; acknowledged." && GuardTracker.BySafetyNet == "Stopped by client safety net." && GuardTracker.Dropped == "No acknowledgement; player dropped.");
+
+// ---- Stage 4c: the list of stopped settings and the notices an admin hid ----
+var stopLog = new StopLog();
+uint stopOne = stopLog.Add("2026-11-23 14:32  Ann (1)  Mod / S.K  Stopped by server; acknowledged."), stopTwo = stopLog.Add("second\nline");
+Check("stop list: entries are numbered from 1 and never share a number", stopOne == 1 && stopTwo == 2 && stopLog.Newest == 2);
+StopLog stopBack = StopLog.Parse(stopLog.Serialize());
+Check("stop list: written and read back, one line per entry", stopBack.Entries.Count == 2 && stopBack.Entries[0].Value.EndsWith("acknowledged.") && stopBack.Entries[1].Value == "second line" && stopBack.Next == 3);
+Check("stop list: removing one leaves the rest and the numbering", stopBack.Remove(1) && !stopBack.Remove(1) && stopBack.Entries.Count == 1 && stopBack.Add("third") == 3);
+Check("stop list: clearing empties it but numbers keep counting", stopBack.Clear() == 2 && stopBack.Entries.Count == 0 && StopLog.Parse(stopBack.Serialize()).Add("x") == 4);
+var stopFull = new StopLog(); for (int i = 0; i < 60; i++) stopFull.Add("e" + i);
+Check("stop list: only the newest 50 are kept", stopFull.Entries.Count == 50 && stopFull.Entries[0].Value == "e10" && stopFull.Newest == 60);
+Check("stop list: a hand-edited file cannot make numbers repeat", StopLog.Parse("next: 1\n7|seven\nrubbish\n|x\n0|zero").Next == 8 && StopLog.Parse("next: 1\n7|seven\nrubbish").Entries.Count == 1 && StopLog.Parse(null).Entries.Count == 0);
+
+var noticeSeen = new NoticeSeen();
+var seenLog = new StopLog(); seenLog.Add("a");
+Check("notices: shown until the admin hides them", !noticeSeen.StopsQuiet("111", seenLog) && !noticeSeen.LeftoversQuiet("111", new[] { "x.dll" }));
+noticeSeen.QuietStops("111", seenLog); noticeSeen.QuietLeftovers("111", new[] { "x.dll" });
+Check("notices: hidden for that admin only", noticeSeen.StopsQuiet("111", seenLog) && noticeSeen.LeftoversQuiet("111", new[] { "x.dll" }) && !noticeSeen.StopsQuiet("222", seenLog) && !noticeSeen.LeftoversQuiet("222", new[] { "x.dll" }));
+seenLog.Add("b");
+Check("notices: another stop brings the stops notice back", !noticeSeen.StopsQuiet("111", seenLog));
+Check("notices: a different set of leftover files brings that notice back; the same set in another order does not", !noticeSeen.LeftoversQuiet("111", new[] { "x.dll", "y.dll" }) && NoticeSeen.Print(new[] { "a", "b" }) == NoticeSeen.Print(new[] { "b", "a" }) && NoticeSeen.Print(null) == "");
+noticeSeen.QuietStops("111", seenLog); seenLog.Remove(1);
+Check("notices: removing an entry does not bring the notice back", noticeSeen.StopsQuiet("111", seenLog));
+uint seenNew = seenLog.Add("c");
+Check("notices: a stop recorded while the admin was away brings the notice back", !noticeSeen.StopsQuiet("111", seenLog));
+seenLog.Remove(seenNew);
+Check("notices: removing that new entry hides the notice again; the older entries were already hidden", noticeSeen.StopsQuiet("111", seenLog));
+seenLog.Clear();
+Check("notices: with nothing in the list there is nothing to hide", !noticeSeen.StopsQuiet("111", seenLog) && !noticeSeen.LeftoversQuiet("111", new string[0]));
+noticeSeen.QuietStops("the host", seenLog);
+NoticeSeen seenBack = NoticeSeen.Parse(noticeSeen.Serialize());
+Check("notices: written and read back, including an admin with a space in the name", seenBack.Of("111").Stops == 2 && seenBack.Of("111").Leftovers == NoticeSeen.Print(new[] { "x.dll" }) && seenBack.ByAdmin.ContainsKey("the host") && NoticeSeen.Parse("# note\n\nbad").ByAdmin.Count == 1);
 
 Console.WriteLine($"{passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

@@ -175,6 +175,10 @@ namespace NOTCH
                     new[] { ChatCommandArgument.FromChoices("mod", mods), ChatCommandArgument.FromChoices("setting", new[] { "sync", "warn", "off", "reset" }) },
                     PermissionLevel.Admin);
 
+                ChatCommands.RegisterServerCommand("notch-config-clear", "NOTCH: empty the list of synced settings that had to be stopped",
+                    r => Reply(RevertServer.Remove("all", out string cleared) ? Good(cleared) : Bad(cleared)),
+                    null, PermissionLevel.Admin);
+
                 ChatCommands.RegisterServerCommand("notch-notice", "NOTCH: read and answer this server's Network Access Notice (works until it is answered)",
                     r => Reply(ConsentRemote.Ask(r.Sender, out string text) ? Good(text) : Bad(text)),
                     null, PermissionLevel.Admin);
@@ -196,6 +200,7 @@ namespace NOTCH
                 Remote("notch-admins", a => DoInfo("admins"));
                 Remote("notch-catalogue", a => DoInfo("catalogue"));
                 Remote("notch-config", a => a.Count == 0 ? DoInfo("config") : a.Count < 2 ? Bad("Usage: notch-config <mod> <sync|warn|off|reset>") : DoConfig(a[0], a[1], "remote command"));
+                Remote("notch-config-clear", a => RevertServer.Remove(a.Count > 0 ? a[0] : "all", out string cleared) ? Good(cleared) : Bad(cleared));
                 Remote("notch-notice", a => ConsentRemote.FromMachine(a.Count > 0 ? a[0] : "", out string text) ? Good(text) : Bad(text));
                 Remote("notch-rule", a => a.Count < 2 ? Bad("Usage: notch-rule <mod> <kick|warn|off|reset>") : DoRule(a[0], a[1], "remote command"));
                 Remote("notch-require", a => a.Count < 2 ? Bad("Usage: notch-require <mod> <on|off|reset>") : DoRequire(a[0], a[1], "remote command"));
@@ -319,7 +324,9 @@ namespace NOTCH
                 if (rows.Count == 0) return Good("Config sync: no mod running on this server has settings.");
                 string policy = Plugin.Policy.Value == JoinPolicy.WarnOnly ? " Policy is WarnOnly, so players are only told of differences; nothing is changed." : "";
                 return Good($"Config sync ({rows.Count} mod(s) with settings).{policy}\n" + string.Join("\n", rows.OrderBy(r => r.Mod.Name)
-                    .Select(r => $"- {r.Mod.Name}: {SyncDecision.Word(r.Verdict.Mode)} ({r.Verdict.Why}), {r.Settings} setting(s)")));
+                    .Select(r => $"- {r.Mod.Name}: {SyncDecision.Word(r.Verdict.Mode)} ({r.Verdict.Why}), {r.Settings} setting(s)"))
+                    + $"\nA setting that keeps being changed is stopped after {Plugin.RevertCount.Value} put-back(s) within {Plugin.RevertSeconds.Value} s (experimental)."
+                    + (RevertServer.Events.Length == 0 ? "" : "\nStopped settings:\n" + string.Join("\n", RevertServer.Log.Entries.AsEnumerable().Reverse().Take(10).Select(e => $"- #{e.Key}  {e.Value}"))));
             }
             if (show == "admins")
             {

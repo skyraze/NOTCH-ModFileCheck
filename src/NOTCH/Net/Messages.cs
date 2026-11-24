@@ -78,6 +78,9 @@ namespace NOTCH.Net
         public ushort SizeLimitMB;
         public uint CatalogueBytes;     // size of the catalogue in use, 0 = none
         public uint CataloguePublished; // when NOMNOM last changed it, seconds since 1970 UTC, 0 = not known
+        public byte RevertCount, RevertSeconds;   // the guard's numbers (experimental)
+        public string[] Events;         // settings that had to be stopped, one "number|line" each
+        public bool QuietStops, QuietLeftovers;   // this admin asked not to see that notice until something new happens
         public PanelSync[] Sync;
     }
 
@@ -89,6 +92,21 @@ namespace NOTCH.Net
     }
 
     /// <summary>An admin's client → server: the answer (1 = accepted, 2 = declined). The server checks the sender is an admin.</summary>
+    /// <summary>Player's game → server: a synced setting was put back, the game's own safety net stopped, or a stop is acknowledged. No values travel.</summary>
+    public struct NotchRevertV1
+    {
+        public byte Protocol;
+        public byte Kind;               // RevertKind
+        public string Guid, Section, Key;
+    }
+
+    /// <summary>Server → player's game: stop putting this one setting back for the rest of the session.</summary>
+    public struct NotchRevertStopV1
+    {
+        public byte Protocol;
+        public string Guid, Section, Key;
+    }
+
     public struct NotchNoticeAnswerV1
     {
         public byte Protocol;
@@ -209,6 +227,8 @@ namespace NOTCH.Net
                 w.WriteByte(m.Protocol); WriteLines(w, m.Leftovers);
                 w.WriteString(Short(m.Catalogue, 600)); WriteLines(w, m.Unmatched); w.WritePackedUInt32(m.SizeLimitMB);
                 w.WritePackedUInt32(m.CatalogueBytes); w.WritePackedUInt32(m.CataloguePublished);
+                w.WriteByte(m.RevertCount); w.WriteByte(m.RevertSeconds); WriteLines(w, m.Events);
+                w.WriteBoolean(m.QuietStops); w.WriteBoolean(m.QuietLeftovers);
                 PanelSync[] rows = m.Sync ?? new PanelSync[0];
                 w.WritePackedUInt32((uint)rows.Length);
                 foreach (PanelSync s in rows)
@@ -222,6 +242,8 @@ namespace NOTCH.Net
                 var m = new NotchPanelNoteV1 { Protocol = r.ReadByte(), Leftovers = ReadLines(r) };
                 m.Catalogue = SafeText.Clean(r.ReadString()); m.Unmatched = ReadLines(r); m.SizeLimitMB = (ushort)Math.Min(r.ReadPackedUInt32(), ushort.MaxValue);
                 m.CatalogueBytes = r.ReadPackedUInt32(); m.CataloguePublished = r.ReadPackedUInt32();
+                m.RevertCount = r.ReadByte(); m.RevertSeconds = r.ReadByte(); m.Events = ReadLines(r);
+                m.QuietStops = r.ReadBoolean(); m.QuietLeftovers = r.ReadBoolean();
                 m.Sync = new PanelSync[Count(r)];
                 for (int i = 0; i < m.Sync.Length; i++)
                     m.Sync[i] = new PanelSync
@@ -239,6 +261,10 @@ namespace NOTCH.Net
             {
                 Protocol = r.ReadByte(), ServerName = SafeText.Clean(r.ReadString()), AgreementVersion = SafeText.Clean(r.ReadString()), PreviousVersion = SafeText.Clean(r.ReadString()),
             };
+            Writer<NotchRevertV1>.Write = (w, m) => { w.WriteByte(m.Protocol); w.WriteByte(m.Kind); w.WriteString(Short(m.Guid, 200)); w.WriteString(Short(m.Section, 200)); w.WriteString(Short(m.Key, 200)); };
+            Reader<NotchRevertV1>.Read = r => new NotchRevertV1 { Protocol = r.ReadByte(), Kind = r.ReadByte(), Guid = SafeText.Clean(r.ReadString()), Section = SafeText.Clean(r.ReadString()), Key = SafeText.Clean(r.ReadString()) };
+            Writer<NotchRevertStopV1>.Write = (w, m) => { w.WriteByte(m.Protocol); w.WriteString(Short(m.Guid, 200)); w.WriteString(Short(m.Section, 200)); w.WriteString(Short(m.Key, 200)); };
+            Reader<NotchRevertStopV1>.Read = r => new NotchRevertStopV1 { Protocol = r.ReadByte(), Guid = SafeText.Clean(r.ReadString()), Section = SafeText.Clean(r.ReadString()), Key = SafeText.Clean(r.ReadString()) };
             Writer<NotchNoticeAnswerV1>.Write = (w, m) => { w.WriteByte(m.Protocol); w.WriteString(m.AgreementVersion ?? ""); w.WriteByte(m.Answer); };
             Reader<NotchNoticeAnswerV1>.Read = r => new NotchNoticeAnswerV1 { Protocol = r.ReadByte(), AgreementVersion = SafeText.Clean(r.ReadString()), Answer = r.ReadByte() };
 
@@ -253,6 +279,8 @@ namespace NOTCH.Net
                 MessagePacker.RegisterMessage<NotchPanelNoteV1>();
                 MessagePacker.RegisterMessage<NotchNoticeAskV1>();
                 MessagePacker.RegisterMessage<NotchNoticeAnswerV1>();
+                MessagePacker.RegisterMessage<NotchRevertV1>();
+                MessagePacker.RegisterMessage<NotchRevertStopV1>();
             }
             catch (ArgumentException e)
             {

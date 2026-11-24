@@ -23,12 +23,13 @@ namespace NOTCH.Panel
         private static string search = "", adminId = "", adminNote = "", banId = "", banReason = "";
         private static string confirmKey;
         private static string[] leftovers = new string[0];   // leftover mod files on the server; the message can be hidden until the tab is opened again
-        private static bool leftoversHidden;
+        private static bool leftoversHidden, stopsHidden;   // dismissed for now; back when the tab is opened again
         // Config sync and the catalogue (the server's second message). syncEdits: mod id → the choice waiting for Apply.
         private static NotchPanelNoteV1 note;
         private static bool notesKnown, syncOpen;
         private static readonly Dictionary<string, byte> syncEdits = new Dictionary<string, byte>();
-        private static string limitText = "";
+        private static string limitText = "", countText = "", secondsText = "";
+        private static bool eventsOpen;
         private static int pendingTab = -1;                 // the tab the admin clicked while changes were unapplied
         private static readonly string[] SyncLabels = { "Auto", "Sync", "Warn", "Off" };
         private static float confirmUntil;
@@ -57,7 +58,7 @@ namespace NOTCH.Panel
             if (state.Open && !visible)
             {
                 visible = true; tab = 0; ClearEdits();
-                leftovers = new string[0]; leftoversHidden = false; note = default; syncOpen = false; pendingTab = -1;
+                leftovers = new string[0]; leftoversHidden = stopsHidden = false; note = default; syncOpen = false; pendingTab = -1;
                 // Ask for the notes only where the server knows the question (NOTCH 0.13.0 and later).
                 notesKnown = System.Version.TryParse(state.Version ?? "", out System.Version v) && v >= new System.Version(0, 13, 0);
                 if (notesKnown) Send(PanelLogic.ActNotes, "", "");
@@ -72,6 +73,8 @@ namespace NOTCH.Panel
             note = fresh;
             leftovers = fresh.Leftovers ?? new string[0];
             if (limitText.Length == 0) limitText = fresh.SizeLimitMB.ToString();
+            if (countText.Length == 0) countText = fresh.RevertCount.ToString();
+            if (secondsText.Length == 0) secondsText = fresh.RevertSeconds.ToString();
         }
 
         internal static void Close()
@@ -81,7 +84,11 @@ namespace NOTCH.Panel
             Popup.GuardOff();
         }
 
-        private static void ClearEdits() { edits.Clear(); policyEdit = timeoutEdit = unlistedEdit = -1; confirmKey = null; syncEdits.Clear(); limitText = ""; }
+        private static void ClearEdits() { edits.Clear(); policyEdit = timeoutEdit = unlistedEdit = -1; confirmKey = null; syncEdits.Clear(); limitText = countText = secondsText = ""; }
+
+        // One request that acts at once, with a fresh copy of the notes after it.
+        private static void SendNow(byte kind, string key, string value) =>
+            server?.Send(new NotchPanelActionV1 { Protocol = Wire.ProtocolVersion, Actions = new[] { new PanelAction { Kind = kind, Key = key, Value = value }, new PanelAction { Kind = PanelLogic.ActNotes, Key = "", Value = "" } } });
 
         private static void Send(byte kind, string key, string value) =>
             server?.Send(new NotchPanelActionV1 { Protocol = Wire.ProtocolVersion, Actions = new[] { new PanelAction { Kind = kind, Key = key, Value = value } } });
@@ -98,9 +105,11 @@ namespace NOTCH.Panel
 
         private static JoinPolicy Policy => (JoinPolicy)(policyEdit >= 0 ? policyEdit : st.Policy);
         private static bool ReportUnlisted => unlistedEdit >= 0 ? unlistedEdit == 0 : st.ReportUnlisted;
-        private static int PendingCount => edits.Count + (policyEdit >= 0 ? 1 : 0) + (timeoutEdit >= 0 ? 1 : 0) + (unlistedEdit >= 0 ? 1 : 0) + syncEdits.Count + (LimitEdit > 0 ? 1 : 0);
+        private static int PendingCount => edits.Count + (policyEdit >= 0 ? 1 : 0) + (timeoutEdit >= 0 ? 1 : 0) + (unlistedEdit >= 0 ? 1 : 0) + syncEdits.Count + (LimitEdit > 0 ? 1 : 0) + (CountEdit > 0 ? 1 : 0) + (SecondsEdit > 0 ? 1 : 0);
 
         /// <summary>The size limit typed in, when it is a valid number different from the server's; otherwise 0.</summary>
+        private static int CountEdit => notesKnown && int.TryParse(countText, out int n) && n >= 1 && n <= 20 && n != note.RevertCount ? n : 0;
+        private static int SecondsEdit => notesKnown && int.TryParse(secondsText, out int n) && n >= 5 && n <= 60 && n != note.RevertSeconds ? n : 0;
         private static int LimitEdit => notesKnown && int.TryParse(limitText, out int mb) && mb >= 1 && mb <= 1024 && mb != note.SizeLimitMB ? mb : 0;
 
         /// <summary>Called from the plugin's OnGUI every frame.</summary>
@@ -190,7 +199,7 @@ namespace NOTCH.Panel
 
         private static void SwitchTab(int to)
         {
-            tab = to; pendingTab = -1; confirmKey = null; statusHidden = true; leftoversHidden = false;   // the last message belonged to the other tab
+            tab = to; pendingTab = -1; confirmKey = null; statusHidden = true; leftoversHidden = stopsHidden = false;   // the last message belonged to the other tab
         }
 
         // ---- Mods ---------------------------------------------------------------------------------------------
@@ -198,13 +207,25 @@ namespace NOTCH.Panel
         /// <summary>The part of the Mods tab that does not scroll: the search row and the column titles.</summary>
         private static void DrawModsTop()
         {
-            if (leftovers.Length > 0 && !leftoversHidden)
+            int stops = (note.Events ?? new string[0]).Length;
+            if (stops > 0 && !stopsHidden && !note.QuietStops)
+            {
+                // Dismiss hides it until the tab is opened again; "Don't show again" hides it until another setting is stopped.
+                GUILayout.BeginHorizontal(rowB);
+                GUILayout.Label((stops == 1 ? "1 synced setting had" : $"{stops} synced settings had") + " to be stopped on players' games. See the Server tab, under Config sync.", changed, GUILayout.ExpandWidth(true));
+                if (GUILayout.Button("Dismiss", button, GUILayout.Width(90f))) stopsHidden = true;
+                if (GUILayout.Button("Don't show again", button, GUILayout.Width(130f))) { stopsHidden = true; SendNow(PanelLogic.ActNoticeQuiet, "stops", ""); }
+                GUILayout.EndHorizontal();
+                GUILayout.Space(4f);
+            }
+            if (leftovers.Length > 0 && !leftoversHidden && !note.QuietLeftovers)
             {
                 // Can be dismissed to give the room back to the list; it returns whenever this tab is opened again.
                 GUILayout.BeginVertical(rowB);
                 GUILayout.BeginHorizontal();
                 GUILayout.Label(leftovers.Length == 1 ? "Leftover file on the server. Remove it, then restart the server:" : $"{leftovers.Length} leftover files on the server. Remove them, then restart the server:", changed, GUILayout.ExpandWidth(true));
                 if (GUILayout.Button("Dismiss", button, GUILayout.Width(90f))) leftoversHidden = true;
+                if (GUILayout.Button("Don't show again", button, GUILayout.Width(130f))) { leftoversHidden = true; SendNow(PanelLogic.ActNoticeQuiet, "leftovers", ""); }
                 GUILayout.EndHorizontal();
                 foreach (string line in leftovers) GUILayout.Label(line, small);
                 GUILayout.EndVertical();
@@ -355,6 +376,8 @@ namespace NOTCH.Panel
             else if (LimitEdit > 0) GUILayout.Label($"Will change from {note.SizeLimitMB} MB when you press Apply.", changed);
             GUILayout.Space(8f);
 
+            DrawGuard();
+
             PanelSync[] rows = note.Sync;
             if (GUILayout.Button((syncOpen ? "Hide" : "Show") + $" per-mod config sync ({rows.Length} mod{(rows.Length == 1 ? "" : "s")} with settings)", button, GUILayout.Width(360f), GUILayout.Height(24f))) syncOpen = !syncOpen;
             if (!syncOpen) return;
@@ -388,6 +411,53 @@ namespace NOTCH.Panel
                 GUILayout.EndHorizontal();
                 if (!s.Locked) { if (choice == s.Choice) syncEdits.Remove(key); else syncEdits[key] = choice; }
             }
+        }
+
+        // The put-back guard's two numbers (experimental) and the list of settings that had to be stopped.
+        private static void DrawGuard()
+        {
+            if (countText.Length == 0 && GUI.GetNameOfFocusedControl() != "notch-count") countText = note.RevertCount.ToString();
+            if (secondsText.Length == 0 && GUI.GetNameOfFocusedControl() != "notch-seconds") secondsText = note.RevertSeconds.ToString();
+            bool validCount = int.TryParse(countText, out int count) && count >= 1 && count <= 20;
+            bool validSeconds = int.TryParse(secondsText, out int seconds) && seconds >= 5 && seconds <= 60;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("If a synced setting keeps being changed, stop putting it back after", text, GUILayout.ExpandWidth(false));
+            GUI.SetNextControlName("notch-count");
+            countText = new string(GUILayout.TextField(countText, 2, field, GUILayout.Width(36f)).Where(char.IsDigit).ToArray());
+            GUILayout.Label("changes within", text, GUILayout.ExpandWidth(false));
+            GUI.SetNextControlName("notch-seconds");
+            secondsText = new string(GUILayout.TextField(secondsText, 2, field, GUILayout.Width(36f)).Where(char.IsDigit).ToArray());
+            GUILayout.Label("seconds  (experimental; 1 to 20, and 5 to 60)", small);
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            if (!validCount || !validSeconds) GUILayout.Label("Enter 1 to 20 changes and 5 to 60 seconds.", bad);
+            else if (CountEdit > 0 || SecondsEdit > 0) GUILayout.Label($"Will change from {note.RevertCount} within {note.RevertSeconds} seconds when you press Apply.", changed);
+
+            string[] events = note.Events ?? new string[0];
+            if (events.Length == 0) GUILayout.Label("No setting has had to be stopped.", small);
+            else
+            {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button((eventsOpen ? "Hide" : "Show") + $" stopped settings ({events.Length})", button, GUILayout.Width(360f), GUILayout.Height(24f))) eventsOpen = !eventsOpen;
+                if (eventsOpen && Confirm("stopclear", "Clear all", 90f)) SendNow(PanelLogic.ActStopRemove, "", "all");
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+                if (eventsOpen)
+                {
+                    GUILayout.Label("Remove an entry once its cause is dealt with. The server log keeps the full record.", small);
+                    for (int i = events.Length - 1; i >= 0; i--)        // newest first; each line is "number|text"
+                    {
+                        int bar = events[i].IndexOf('|');
+                        string id = bar > 0 ? events[i].Substring(0, bar) : "";
+                        GUILayout.BeginHorizontal((events.Length - i) % 2 == 0 ? rowA : rowB);
+                        if (Confirm("stopremove:" + id, "Remove", 70f)) SendNow(PanelLogic.ActStopRemove, "", id);
+                        GUILayout.Space(6f);
+                        GUILayout.Label(bar > 0 ? events[i].Substring(bar + 1) : events[i], small);
+                        GUILayout.EndHorizontal();
+                    }
+                }
+            }
+            GUILayout.Space(8f);
         }
 
         // A caution sign drawn in code, so it looks the same whatever fonts the PC has. Twice the shown size, to stay sharp when scaled.
@@ -555,6 +625,8 @@ namespace NOTCH.Panel
             foreach (PanelSync s in note.Sync ?? new PanelSync[0])
                 if (syncEdits.TryGetValue(RuleOverrides.Key(s.Guid), out byte choice)) actions.Add(new PanelAction { Kind = PanelLogic.ActSync, Key = s.Guid, Value = PanelLogic.SyncWords[Mathf.Clamp(choice, 0, 3)] });
             if (LimitEdit > 0) actions.Add(new PanelAction { Kind = PanelLogic.ActSizeLimit, Key = "", Value = LimitEdit.ToString() });
+            if (CountEdit > 0) actions.Add(new PanelAction { Kind = PanelLogic.ActRevertCount, Key = "", Value = CountEdit.ToString() });
+            if (SecondsEdit > 0) actions.Add(new PanelAction { Kind = PanelLogic.ActRevertSeconds, Key = "", Value = SecondsEdit.ToString() });
             if (notesKnown && actions.Count > 0) actions.Add(new PanelAction { Kind = PanelLogic.ActNotes, Key = "", Value = "" });   // so the table and status come back fresh
             if (actions.Count == 0 || server == null) return;
             awaitingApply = true;

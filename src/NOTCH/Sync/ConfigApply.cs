@@ -14,12 +14,20 @@ namespace NOTCH.Sync
     /// <summary>Player side of config sync: applies a server's values in memory only, and puts the player's own back on every way out.</summary>
     internal static class ConfigApply
     {
-        private struct Held { public ConfigEntryBase Entry; public string Own; }
+        private sealed class Held
+        {
+            public ConfigEntryBase Entry; public string Own, Server, Guid, Label;
+            public bool Stopped, Told;
+            public readonly RevertWindow Window = new RevertWindow();
+        }
 
         private static readonly PartsBin incoming = new PartsBin();
         private static readonly List<Held> held = new List<Held>();                                   // the player's own values, to put back
         private static readonly Dictionary<ConfigFile, bool> files = new Dictionary<ConfigFile, bool>();   // file → its own "save on change" switch
         private static readonly HashSet<ConfigFile> saveWanted = new HashSet<ConfigFile>();           // a save was asked for while held: done on release
+        private static readonly Dictionary<ConfigFile, EventHandler<SettingChangedEventArgs>> watching = new Dictionary<ConfigFile, EventHandler<SettingChangedEventArgs>>();
+        private static readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+        private static INetworkPlayer link;                  // the server, for put-back reports
 
         /// <summary>What happened at the last join, in plain lines. For the log now; the message window and the report later.</summary>
         internal static List<string> LastLines { get; private set; } = new List<string>();
@@ -46,16 +54,17 @@ namespace NOTCH.Sync
                 if (Plugin.IsServerProcess) return;
                 byte[] plain = ConfigPack.Unsqueeze(msg.Data ?? new byte[0], msg.Compressed);
                 List<SyncMod> mods = incoming.Add(msg.Part, msg.Parts, plain);
-                if (mods != null) Take(mods, msg.Apply);
+                if (mods != null) Take(mods, msg.Apply, server);
             }
             catch (InvalidDataException e) { Plugin.Log.LogWarning("Config sync: the server's settings could not be read and were ignored (" + e.Message + ")."); }
             catch (Exception e) { Plugin.Log.LogWarning("Config sync failed: " + e.Message); }
         }
 
         /// <summary>Applies (or, for a WarnOnly server, only compares) the server's values.</summary>
-        private static void Take(List<SyncMod> mods, bool apply)
+        private static void Take(List<SyncMod> mods, bool apply, INetworkPlayer server)
         {
             Restore("new server");                              // never let one server's values carry into another's
+            link = server;
             var lines = new List<string>();
             int applied = 0, same = 0, differ = 0;
             foreach (SyncMod mod in mods)
@@ -64,6 +73,12 @@ namespace NOTCH.Sync
                 if (string.Equals(mod.Guid, Plugin.Guid, StringComparison.OrdinalIgnoreCase)) continue;                       // NOTCH's own settings are never touched
                 ConfigFile config = info.Instance.Config;
                 string name = info.Metadata.Name;
+                SyncLabel ownLabel = SyncLabels.Parse(Plugin.KnownSet.FirstOrDefault(e => e.Origin == ModOrigin.Loaded && string.Equals(e.Guid, mod.Guid, StringComparison.OrdinalIgnoreCase))?.ConfigSyncTag);
+                if (ownLabel == SyncLabel.Self || ownLabel == SyncLabel.Off)   // the author's label on the player's own copy is honoured here too
+                {
+                    lines.Add($"{name}: not touched: your copy of the mod is labelled by its author to keep its own settings");
+                    continue;
+                }
                 bool applyMod = apply && mod.Apply;                 // the server may send one mod to apply and another only to compare
                 foreach (SyncSetting s in mod.Settings)
                 {
@@ -78,12 +93,21 @@ namespace NOTCH.Sync
                     if (!applyMod) { differ++; lines.Add($"{label} differs: yours is {own}, the server's is {Shown(s.Value)}"); continue; }
 
                     if (!files.ContainsKey(config)) { files[config] = config.SaveOnConfigSet; config.SaveOnConfigSet = false; }   // stop saves before the first change
-                    held.Add(new Held { Entry = entry, Own = own });
                     entry.SetSerializedValue(s.Value);
                     string now = entry.GetSerializedValue();
+                    held.Add(new Held { Entry = entry, Own = own, Server = now, Guid = mod.Guid, Label = label });
                     applied++;
                     lines.Add(now == s.Value ? $"{label} = {now} (yours: {own})" : $"{label} = {now} (yours: {own}; the server sent {Shown(s.Value)}, your copy of the mod adjusted it)");
                 }
+            }
+
+            // From here on, a change to a held setting is put back. Listening starts after the values are in, so NOTCH's own changes are not seen.
+            foreach (ConfigFile config in files.Keys.ToList())
+            {
+                ConfigFile file = config;
+                EventHandler<SettingChangedEventArgs> handler = (o, e) => Changed(file, e.ChangedSetting);
+                file.SettingChanged += handler;
+                watching[file] = handler;
             }
 
             string summary = applied > 0
@@ -105,6 +129,56 @@ namespace NOTCH.Sync
                 Popup.Note(told);
                 pendingMessage = told + " Details: " + Plugin.ReportPathShown;
             }
+        }
+
+        /// <summary>A setting in a held file changed. A held one goes back to the server's value; any other is the player's own and is saved on release.</summary>
+        private static void Changed(ConfigFile file, ConfigEntryBase entry)
+        {
+            try
+            {
+                Held h = held.FirstOrDefault(x => x.Entry == entry);
+                if (h == null) { saveWanted.Add(file); return; }
+                if (h.Stopped || entry.GetSerializedValue() == h.Server) return;    // stopped, or this is NOTCH's own put-back arriving
+                if (h.Window.Add(clock.Elapsed.TotalSeconds, GuardTracker.SafetySeconds) >= GuardTracker.SafetyCount)
+                {
+                    h.Stopped = true;                                               // the fixed safety net: something is fighting over it
+                    Send(RevertKind.SafetyNet, h.Guid, entry.Definition.Section, entry.Definition.Key);
+                    Remark($"{h.Label} was changed {GuardTracker.SafetyCount} times in {GuardTracker.SafetySeconds:0} seconds, so NOTCH stopped putting the server's value back");
+                    return;
+                }
+                Send(RevertKind.PutBack, h.Guid, entry.Definition.Section, entry.Definition.Key);
+                if (!h.Told) { h.Told = true; Remark($"{h.Label} was changed during the session and put back to the server's value"); }
+                entry.SetSerializedValue(h.Server);
+            }
+            catch (Exception e) { Plugin.Log.LogWarning("Config sync: could not put a setting back: " + e.Message); }
+        }
+
+        /// <summary>The server says: stop putting this setting back. Always answered, even for a setting already stopped or no longer held.</summary>
+        internal static void OnStop(INetworkPlayer server, NotchRevertStopV1 msg)
+        {
+            try
+            {
+                string key = RevertServer.KeyOf(msg.Guid, msg.Section, msg.Key);
+                Held h = held.FirstOrDefault(x => RevertServer.KeyOf(x.Guid, x.Entry.Definition.Section, x.Entry.Definition.Key) == key);
+                if (h != null && !h.Stopped) { h.Stopped = true; Remark($"{h.Label} keeps being changed, so the server told NOTCH to stop putting its value back"); }
+                server.Send(new NotchRevertV1 { Protocol = Wire.ProtocolVersion, Kind = (byte)RevertKind.Ack, Guid = msg.Guid, Section = msg.Section, Key = msg.Key });
+            }
+            catch (Exception e) { Plugin.Log.LogWarning("Config sync: could not answer the server's stop: " + e.Message); }
+        }
+
+        private static void Send(RevertKind kind, string guid, string section, string key)
+        {
+            try { link?.Send(new NotchRevertV1 { Protocol = Wire.ProtocolVersion, Kind = (byte)kind, Guid = guid, Section = section, Key = key }); }
+            catch (Exception e) { Plugin.Dbg("config sync: report not sent: " + e.Message); }
+        }
+
+        /// <summary>A line for the log and the report file. Nothing is shown on screen.</summary>
+        private static void Remark(string line)
+        {
+            Plugin.Log.LogInfo("Config sync: " + line + ".");
+            if (LastLines.Count == 0) return;
+            LastLines.Add(line);
+            WriteReport(LastLines[0], LastLines.Skip(1).ToList());
         }
 
         /// <summary>A server's value made safe to show: cleaned like every other text from the network, and cut short.</summary>
@@ -139,6 +213,9 @@ namespace NOTCH.Sync
         internal static void Restore(string why)
         {
             pendingMessage = null;
+            foreach (KeyValuePair<ConfigFile, EventHandler<SettingChangedEventArgs>> w in watching) w.Key.SettingChanged -= w.Value;   // stop listening before the values go back
+            watching.Clear();
+            link = null;
             if (held.Count == 0 && files.Count == 0) return;
             int count = held.Count;
             for (int i = held.Count - 1; i >= 0; i--)

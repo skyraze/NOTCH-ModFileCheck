@@ -29,6 +29,8 @@ namespace NOTCH
         public string FilePath;
         public string ScopeTag = "";    // the author's own label, from [assembly: AssemblyMetadata("NotchScope", "...")]; "" when there is none
         public string CompatibleFrom = "";  // the author's label on THIS copy: the oldest version it still works with, from [assembly: AssemblyMetadata("NotchCompatibleFrom", "1.15")]
+        public string ConfigSyncTag = "";   // the author's label for config sync: Self, Notch or Off; "" when there is none
+        public string OwnSync = "";     // a sync library found in the file (ServerSync, Jotunn, CSync), or ""
         public bool Required;           // server side: every joining player must have this mod (set by RequiredRules.Apply)
         public string RequiredWhy = ""; // server side: the reason, in a few words
 

@@ -21,12 +21,56 @@ namespace NOTCH.Sync
         public bool Locked;
     }
 
+    /// <summary>The author's label: [assembly: AssemblyMetadata("NotchConfigSync", "Self" | "Notch" | "Off")].</summary>
+    public enum SyncLabel : byte { None = 0, Self = 1, Notch = 2, Off = 3 }
+
+    /// <summary>Reads the label's word and spots sync libraries by name. Pure logic.</summary>
+    public static class SyncLabels
+    {
+        public const string Name = "NotchConfigSync";
+
+        // Libraries that sync a mod's config by themselves. Matched on a referenced file's name or a namespace inside the mod.
+        private static readonly string[] Known = { "ServerSync", "Jotunn", "CSync" };
+
+        public static SyncLabel Parse(string word)
+        {
+            switch ((word ?? "").Trim().ToLowerInvariant())
+            {
+                case "self": return SyncLabel.Self;
+                case "notch": return SyncLabel.Notch;
+                case "off": return SyncLabel.Off;
+                default: return SyncLabel.None;
+            }
+        }
+
+        /// <summary>The sync library found, or "". names = the mod's referenced files and the namespaces of its own types.</summary>
+        public static string OwnSync(IEnumerable<string> names)
+        {
+            foreach (string raw in names ?? new string[0])
+            {
+                string first = (raw ?? "").Split('.')[0];
+                string last = (raw ?? "").Substring((raw ?? "").LastIndexOf('.') + 1);
+                foreach (string known in Known)
+                    if (string.Equals(first, known, StringComparison.OrdinalIgnoreCase) || string.Equals(last, known, StringComparison.OrdinalIgnoreCase)) return known;
+            }
+            return "";
+        }
+    }
+
     /// <summary>Decides whether a mod's config is synced. Pure logic; the order of the checks is the order of authority.</summary>
     public static class SyncDecision
     {
-        public static SyncVerdict Decide(bool neverSend, CatalogueSide side, bool required, SyncChoice choice)
+        public static SyncVerdict Decide(bool neverSend, SyncLabel label, string ownSync, CatalogueSide side, bool required, SyncChoice choice)
         {
             if (neverSend) return new SyncVerdict { Mode = SyncMode.Off, Why = "never sent", Locked = true };
+            if (label == SyncLabel.Self) return new SyncVerdict { Mode = SyncMode.Off, Why = "author: syncs itself", Locked = true };
+            if (label == SyncLabel.Off) return new SyncVerdict { Mode = SyncMode.Off, Why = "author: never sync", Locked = true };
+            if (label == SyncLabel.Notch)                       // the author asked for NOTCH's sync: outranks detection and the catalogue, not the manager
+            {
+                if (choice != SyncChoice.Auto) return new SyncVerdict { Mode = choice == SyncChoice.Sync ? SyncMode.Sync : choice == SyncChoice.Warn ? SyncMode.Warn : SyncMode.Off, Why = "set by you" };
+                return new SyncVerdict { Mode = SyncMode.Sync, Why = "author asked for it" };
+            }
+            if (!string.IsNullOrEmpty(ownSync)) return new SyncVerdict { Mode = SyncMode.Off, Why = "has its own sync (" + ownSync + ")", Locked = true };
             if (side == CatalogueSide.Client) return new SyncVerdict { Mode = SyncMode.Off, Why = "client-only mod (NOMNOM)", Locked = true };
             if (side == CatalogueSide.Server) return new SyncVerdict { Mode = SyncMode.Off, Why = "server-only mod (NOMNOM)", Locked = true };
             switch (choice)

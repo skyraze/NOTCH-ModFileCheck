@@ -37,6 +37,7 @@ namespace NOTCH
         internal static ConfigEntry<UnlistedMode> UnlistedClientMods;
         internal static ConfigEntry<AdminMode> AdminManagement;
         internal static ConfigEntry<int> CatalogueSizeLimitMB;
+        internal static ConfigEntry<int> RevertCount, RevertSeconds;
         private static bool joinExchangeOn;
 
         /// <summary>Debug-only log line.</summary>
@@ -90,6 +91,13 @@ namespace NOTCH
                 new ConfigDescription("Server only. The largest NOMNOM catalogue download NOTCH will accept, in megabytes. A larger file is dropped while it downloads. " +
                                       "The catalogue is under 1 MB today; 8 leaves room to grow. From 64 up NOTCH warns, because a file that size takes memory to read.",
                                       new AcceptableValueRange<int>(1, 1024)));
+
+            RevertCount = Config.Bind("ConfigSync", "RevertCount", 3,
+                new ConfigDescription("Server only. EXPERIMENTAL. When a player's game has to put the same synced setting back this many times within RevertSeconds, " +
+                                      "something is fighting over it: the server tells that game to stop putting it back, and records it.",
+                                      new AcceptableValueRange<int>(1, 20)));
+            RevertSeconds = Config.Bind("ConfigSync", "RevertSeconds", 10,
+                new ConfigDescription("Server only. EXPERIMENTAL. The number of seconds RevertCount is counted over.", new AcceptableValueRange<int>(5, 60)));
 
             ConsentStore.Init(Config);                      // the answer to the Network Access Notice, and the notice as a text file
 

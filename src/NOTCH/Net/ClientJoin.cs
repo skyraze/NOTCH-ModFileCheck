@@ -27,6 +27,7 @@ namespace NOTCH.Net
                 __instance.client.Disconnected.RemoveListener(OnDisconnected);
                 __instance.client.Disconnected.AddListener(OnDisconnected);
                 __instance.client.MessageHandler.RegisterHandler<NotchConfigV1>(NOTCH.Sync.ConfigApply.OnConfig, allowUnauthenticated: true);
+                __instance.client.MessageHandler.RegisterHandler<NotchRevertStopV1>(NOTCH.Sync.ConfigApply.OnStop, allowUnauthenticated: true);
                 __instance.client.MessageHandler.RegisterHandler<NotchInterrogateV1>(OnInterrogate, allowUnauthenticated: true);
                 __instance.client.MessageHandler.RegisterHandler<NotchVerdictV1>(OnVerdict, allowUnauthenticated: true);
                 NOTCH.Panel.PanelWindow.Close();

@@ -34,6 +34,10 @@ namespace NOTCH.Net
                 __instance.server.MessageHandler.RegisterHandler<NotchPanelActionV1>(NOTCH.Panel.PanelServer.OnAction, allowUnauthenticated: false);
                 // An admin's answer to the Network Access Notice. Checked again in ConsentRemote.
                 __instance.server.MessageHandler.RegisterHandler<NotchNoticeAnswerV1>(NOTCH.Consent.ConsentRemote.OnAnswer, allowUnauthenticated: false);
+                // Put-back reports from a player's game. Checked in RevertServer against what that player was sent.
+                __instance.server.MessageHandler.RegisterHandler<NotchRevertV1>(NOTCH.Sync.RevertServer.OnRevert, allowUnauthenticated: true);
+                __instance.server.Disconnected.RemoveListener(NOTCH.Sync.RevertServer.Forget);
+                __instance.server.Disconnected.AddListener(NOTCH.Sync.RevertServer.Forget);
                 Plugin.Dbg("server started: listening for mod-list answers");
             }
         }

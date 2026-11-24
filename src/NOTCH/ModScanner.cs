@@ -38,6 +38,13 @@ namespace NOTCH
                             .Where(a => a.AttributeType.FullName == "System.Reflection.AssemblyMetadataAttribute" && a.ConstructorArguments.Count == 2
                                         && string.Equals(a.ConstructorArguments[0].Value as string, "NotchCompatibleFrom", StringComparison.OrdinalIgnoreCase))
                             .Select(a => a.ConstructorArguments[1].Value as string).FirstOrDefault() ?? "";
+                        // …and for config sync: [assembly: AssemblyMetadata("NotchConfigSync", "Self" | "Notch" | "Off")].
+                        string syncTag = asm.CustomAttributes
+                            .Where(a => a.AttributeType.FullName == "System.Reflection.AssemblyMetadataAttribute" && a.ConstructorArguments.Count == 2
+                                        && string.Equals(a.ConstructorArguments[0].Value as string, Sync.SyncLabels.Name, StringComparison.OrdinalIgnoreCase))
+                            .Select(a => a.ConstructorArguments[1].Value as string).FirstOrDefault() ?? "";
+                        // A sync library the mod carries or refers to. Names only; nothing is loaded.
+                        string ownSync = Sync.SyncLabels.OwnSync(asm.MainModule.AssemblyReferences.Select(r => r.Name).Concat(asm.MainModule.Types.Select(t => t.Namespace)));
                         // Blueprinter content: a plugin DLL with the .nobp packed inside as a resource. Only its name is read.
                         bool embedsNobp = asm.MainModule.Resources.Any(r => r.Name != null && r.Name.EndsWith(".nobp", StringComparison.OrdinalIgnoreCase));
                         foreach (TypeDefinition type in asm.MainModule.Types)
@@ -58,6 +65,8 @@ namespace NOTCH
                                 FilePath = dll,
                                 ScopeTag = scope.Trim(),
                                 CompatibleFrom = compatibleFrom.Trim(),
+                                ConfigSyncTag = syncTag.Trim(),
+                                OwnSync = ownSync,
                             };
                             entry.ClientOnlyTag = entry.ProcessTags.Length > 0 && entry.ProcessTags.All(t => SameProcess(t, ClientProcess));
                             if (fromNoLoadFolder) entry.Origin = ModOrigin.NoLoadFolder;
@@ -66,7 +75,7 @@ namespace NOTCH
                             else if (entry.ProcessTags.Length > 0 && !entry.ProcessTags.Any(t => SameProcess(t, Paths.ProcessName))) entry.Origin = ModOrigin.SkippedByTag;
                             else entry.Origin = ModOrigin.NotLoaded;
                             found.Add(entry);
-                            debug?.Invoke($"scan plugin: {entry.Display} ({entry.Guid}) {entry.Origin} tags=[{string.Join(",", entry.ProcessTags)}]{(entry.ScopeTag.Length > 0 ? " scope=" + entry.ScopeTag : "")}{(entry.CompatibleFrom.Length > 0 ? " compatibleFrom=" + entry.CompatibleFrom : "")}{(entry.BlueprinterContent ? " blueprinter-content" : "")} sha256={hash} file={dll}");
+                            debug?.Invoke($"scan plugin: {entry.Display} ({entry.Guid}) {entry.Origin} tags=[{string.Join(",", entry.ProcessTags)}]{(entry.ScopeTag.Length > 0 ? " scope=" + entry.ScopeTag : "")}{(entry.ConfigSyncTag.Length > 0 ? " configsync=" + entry.ConfigSyncTag : "")}{(entry.OwnSync.Length > 0 ? " ownsync=" + entry.OwnSync : "")}{(entry.CompatibleFrom.Length > 0 ? " compatibleFrom=" + entry.CompatibleFrom : "")}{(entry.BlueprinterContent ? " blueprinter-content" : "")} sha256={hash} file={dll}");
                         }
                         if (hash == null) debug?.Invoke($"scan: {dll} has no BepInEx plugin in it (a library) — ignored");
                     }
