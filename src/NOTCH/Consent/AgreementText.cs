@@ -5,12 +5,12 @@ namespace NOTCH.Consent
     {
         private static readonly AgreementVersion[] Versions =
         {
-            new AgreementVersion("0.13.0", true, Text_0_13_0),
+            new AgreementVersion("0.90.0", true, Text_0_90_0),
         };
 
-        private const string Text_0_13_0 = @"================================================================================
+        private const string Text_0_90_0 = @"================================================================================
 NOTCH NETWORK ACCESS NOTICE AND CONSENT
-Agreement Version: 0.13.0
+Agreement Version: 0.90.0
 ================================================================================
 
 1. PURPOSE AND SCOPE

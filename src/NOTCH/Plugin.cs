@@ -26,7 +26,7 @@ namespace NOTCH
         public const string Guid = "com.skyraze.notch";
         public const string Name = "NOTCH";
         public const string FullName = "Nuclear Option Transponder Check Handshake";
-        public const string Version = "0.13.0";
+        public const string Version = "0.90.0";
         public const string BlueprinterGuid = "com.nikkorap.blueprinter";
         public const string NoLoadFolderName = "Client-Mods-NoLoad";
 

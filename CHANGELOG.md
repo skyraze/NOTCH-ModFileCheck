@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.13.0, in development)
+## Unreleased (0.90.0, in development)
 
 Not released. Config sync works for required mods, with per-mod choices in the menu and by command, and follows the
 author's label. A synced setting changed mid-session is put back.

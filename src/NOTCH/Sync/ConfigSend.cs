@@ -15,7 +15,7 @@ namespace NOTCH.Sync
     {
         /// <summary>Never sent, whatever else is decided: NOTCH's own settings, Configuration Manager's, and Blueprinter's own (its content mods still sync). BepInEx.cfg belongs to no plugin, so it is never read.</summary>
         private static readonly string[] NeverSend = { Plugin.Guid, "com.bepis.bepinex.configurationmanager", Plugin.BlueprinterGuid };
-        private static readonly System.Version FirstWithSync = new System.Version(0, 13, 0);
+        private static readonly System.Version FirstWithSync = new System.Version(0, 90, 0);
 
         /// <summary>One loaded plugin as config sync sees it: how many settings it has declared and what happens to them.</summary>
         internal struct Row { public ModEntry Mod; public int Settings; public SyncChoice Choice; public SyncVerdict Verdict; }

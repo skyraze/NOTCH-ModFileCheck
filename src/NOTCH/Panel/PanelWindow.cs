@@ -59,8 +59,8 @@ namespace NOTCH.Panel
             {
                 visible = true; tab = 0; ClearEdits();
                 leftovers = new string[0]; leftoversHidden = stopsHidden = false; note = default; syncOpen = false; pendingTab = -1;
-                // Ask for the notes only where the server knows the question (NOTCH 0.13.0 and later).
-                notesKnown = System.Version.TryParse(state.Version ?? "", out System.Version v) && v >= new System.Version(0, 13, 0);
+                // Ask for the notes only where the server knows the question (NOTCH 0.90.0 and later).
+                notesKnown = System.Version.TryParse(state.Version ?? "", out System.Version v) && v >= new System.Version(0, 90, 0);
                 if (notesKnown) Send(PanelLogic.ActNotes, "", "");
             }
             if (awaitingApply) { awaitingApply = false; if (state.StatusOk) ClearEdits(); }
@@ -346,7 +346,7 @@ namespace NOTCH.Panel
         private static void DrawSync()
         {
             GUILayout.Label("Config sync and the NOMNOM catalogue", bold);
-            if (!notesKnown) { GUILayout.Label("This server's NOTCH is older than 0.13.0 and has no config sync.", small); return; }
+            if (!notesKnown) { GUILayout.Label("This server's NOTCH is older than 0.90.0 and has no config sync.", small); return; }
             if (note.Sync == null) { GUILayout.Label("Waiting for the server…", small); return; }
 
             if (limitText.Length == 0 && GUI.GetNameOfFocusedControl() != "notch-limit") limitText = note.SizeLimitMB.ToString();   // nothing typed: show the server's value
