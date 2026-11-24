@@ -16,6 +16,7 @@ author's label. A synced setting changed mid-session is put back.
   restarts until an admin removes the entries (in the menu, or `/notch-config-clear` for all of them).
 - **Menu notices.** The Mods tab shows a notice when settings have been stopped, beside the one for leftover files.
   Each can be dismissed for now, or hidden with "Don't show again" until something new of that kind happens.
+- The player's log and report list at most 200 settings per join, problems first, then "and N more".
 - **Fixed:** a setting the player changed on a synced mod during a session (one that is not synced) was not written
   to their config file on leaving. It is now.
 

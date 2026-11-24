@@ -144,7 +144,7 @@ namespace NOTCH.Panel
                 {
                     NOTCH.Sync.ConfigSend.Row row = NOTCH.Sync.ConfigSend.Rows().FirstOrDefault(r => string.Equals(r.Mod.Guid, key, StringComparison.OrdinalIgnoreCase));
                     if (row.Mod == null) { result = $"Could not find a mod with settings called '{key}'."; return false; }
-                    if (row.Verdict.Locked) { result = $"Could not change {row.Mod.Name}: its settings are never sent ({row.Verdict.Why})."; return false; }
+                    if (row.Verdict.Locked) { result = $"Could not change {row.Mod.Name}: config sync is off for this mod ({row.Verdict.Why})."; return false; }
                     if (!NOTCH.Sync.SyncChoices.TryWord(value, out NOTCH.Sync.SyncChoice choice)) { result = $"Could not set config sync to '{value}'."; return false; }
                     RuleStore.SetSync(row.Mod.Guid, choice);
                     result = $"{row.Mod.Name}: config sync = {(choice == NOTCH.Sync.SyncChoice.Auto ? "default" : value)}."; return true;

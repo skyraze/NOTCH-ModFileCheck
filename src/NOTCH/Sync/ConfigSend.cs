@@ -86,7 +86,7 @@ namespace NOTCH.Sync
                 int sent = mods.Count - leftOut.Count;
                 RevertServer.Note(player, who, policy == JoinPolicy.WarnOnly ? new SyncMod[0] : mods.Where(m => m.Apply && !leftOut.Contains(m.Guid)));
                 Plugin.Log.LogInfo($"[join] {who}: sent the settings of {sent} mod(s) ({(policy == JoinPolicy.WarnOnly ? "all to compare, policy WarnOnly" : mods.Count(m => m.Apply) + " to apply, " + mods.Count(m => !m.Apply) + " to compare")}): " +
-                                   $"{mods.Where(m => !leftOut.Contains(m.Guid)).Sum(m => m.Settings.Count)} setting(s), {bytes} bytes, {ConfigPack.Packets(bytes)} packet(s){(packed > 0 ? ", compressed" : "")}");
+                                   $"{mods.Where(m => !leftOut.Contains(m.Guid)).Sum(m => m.Settings.Count)} setting(s), {bytes} bytes, {parts.Count} part(s), {ConfigPack.Packets(bytes)} packet(s){(packed > 0 ? ", compressed" : "")}");
                 if (leftOut.Count > 0) Plugin.Log.LogWarning($"[join] Settings too large to send, left out: {string.Join(", ", leftOut)}");
             }
             catch (Exception e) { Plugin.Log.LogWarning($"[join] {who}: could not send settings: {e.Message}"); }

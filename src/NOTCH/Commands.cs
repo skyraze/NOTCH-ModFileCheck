@@ -372,7 +372,7 @@ namespace NOTCH
             if (!SyncChoices.TryWord(word, out SyncChoice choice)) return Bad($"'{word}' is not a choice. Use sync, warn, off or reset.");
             ConfigSend.Row row = ConfigSend.Rows().FirstOrDefault(r => r.Mod == mod);
             if (row.Mod == null) return Bad($"{mod.Name} has no settings on this server, so there is nothing to sync.");
-            if (row.Verdict.Locked) return Bad($"{mod.Name}: its settings are never sent ({row.Verdict.Why}). This cannot be changed.");
+            if (row.Verdict.Locked) return Bad($"{mod.Name}: config sync is off for this mod ({row.Verdict.Why}). This cannot be changed.");
             RuleStore.SetSync(mod.Guid, choice);
             row = ConfigSend.Rows().First(r => r.Mod == mod);
             Plugin.Log.LogInfo($"[config] {who} set config sync for {mod.Name} to {(choice == SyncChoice.Auto ? "the default" : word.ToLowerInvariant())}.");

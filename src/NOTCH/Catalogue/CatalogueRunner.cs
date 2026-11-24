@@ -94,7 +94,7 @@ namespace NOTCH.Catalogue
                 DateTime now = DateTime.UtcNow;
                 if (!CatalogueSchedule.Due(now, lastCheckUtc, missionLoading))
                 {
-                    Plugin.Dbg($"{why ?? (serverStarting ? "server start" : missionLoading ? "mission load" : "two hours passed")} seen; next catalogue check not due ({(int)(now - lastCheckUtc).TotalMinutes} min since the last)");
+                    Plugin.Dbg($"{why ?? (serverStarting ? "server start" : missionLoading ? "mission load" : "two hours passed")}: next catalogue check not due ({(int)(now - lastCheckUtc).TotalMinutes} min since the last)");
                     return;
                 }
                 if (Interlocked.CompareExchange(ref running, 1, 0) != 0) return;     // a check is already running

@@ -86,6 +86,23 @@ namespace NOTCH.Sync
         public static string Word(SyncMode mode) => mode == SyncMode.Sync ? "sync" : mode == SyncMode.Warn ? "warn" : "off";
     }
 
+    /// <summary>Keeps the player's list of settings to a readable length. Pure logic.</summary>
+    public static class SyncReport
+    {
+        public const int MaxLines = 200;
+
+        /// <summary>Things that need attention first, then what was set; past the limit, one line says how many more there were.</summary>
+        public static List<string> Cap(IEnumerable<string> attention, IEnumerable<string> set, int max = MaxLines)
+        {
+            List<string> all = (attention ?? new string[0]).Concat(set ?? new string[0]).ToList();
+            if (all.Count <= max) return all;
+            int more = all.Count - max;
+            all.RemoveRange(max, more);
+            all.Add($"and {more} more setting(s) not listed here");
+            return all;
+        }
+    }
+
     /// <summary>Text of config-sync.yaml: the manager's per-mod choices. Pure text in, text out.</summary>
     public static class SyncChoices
     {

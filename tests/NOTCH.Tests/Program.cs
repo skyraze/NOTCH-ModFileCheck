@@ -515,6 +515,12 @@ var mixedMods = new[] { new SyncMod { Guid = "applies", Apply = true, Settings =
 List<SyncMod> mixedBack = ConfigPack.Read(ConfigPack.Write(mixedMods));
 Check("pack: each mod carries whether it is applied or only compared", mixedBack[0].Apply && !mixedBack[1].Apply);
 
+// ---- The player's list of settings is capped ----
+Check("report cap: a short list is left as it is, attention first", SyncReport.Cap(new[] { "p1" }, new[] { "s1", "s2" }).SequenceEqual(new[] { "p1", "s1", "s2" }));
+List<string> capMany = SyncReport.Cap(new[] { "problem" }, Enumerable.Range(1, 4806).Select(i => "set " + i));
+Check("report cap: a long list keeps 200 lines and says how many more", capMany.Count == 201 && capMany[0] == "problem" && capMany[199] == "set 199" && capMany[200] == "and 4607 more setting(s) not listed here");
+Check("report cap: exactly at the limit nothing is cut", SyncReport.Cap(null, Enumerable.Range(1, 200).Select(i => "s" + i)).Count == 200 && SyncReport.Cap(null, null).Count == 0);
+
 // ---- Stage 4c: the put-back guard ----
 var guardWindow = new RevertWindow();
 Check("guard window: counts events inside the window", guardWindow.Add(0, 10) == 1 && guardWindow.Add(4, 10) == 2 && guardWindow.Add(9, 10) == 3);

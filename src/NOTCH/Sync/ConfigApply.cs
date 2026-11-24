@@ -65,7 +65,8 @@ namespace NOTCH.Sync
         {
             Restore("new server");                              // never let one server's values carry into another's
             link = server;
-            var lines = new List<string>();
+            var lines = new List<string>();                     // what needs the player's attention
+            var setLines = new List<string>();                  // what was set; listed after, and capped
             int applied = 0, same = 0, differ = 0;
             foreach (SyncMod mod in mods)
             {
@@ -97,7 +98,7 @@ namespace NOTCH.Sync
                     string now = entry.GetSerializedValue();
                     held.Add(new Held { Entry = entry, Own = own, Server = now, Guid = mod.Guid, Label = label });
                     applied++;
-                    lines.Add(now == s.Value ? $"{label} = {now} (yours: {own})" : $"{label} = {now} (yours: {own}; the server sent {Shown(s.Value)}, your copy of the mod adjusted it)");
+                    setLines.Add(now == s.Value ? $"{label} = {now} (yours: {own})" : $"{label} = {now} (yours: {own}; the server sent {Shown(s.Value)}, your copy of the mod adjusted it)");
                 }
             }
 
@@ -115,6 +116,7 @@ namespace NOTCH.Sync
                   (differ > 0 ? $" {differ} other setting(s) differ and were left alone (the server only warns about those)." : "")
                 : differ > 0 ? $"Config sync: {differ} setting(s) differ from this server's. Nothing was changed (the server only warns); you may see differences in play."
                 : $"Config sync: your settings match this server's ({same} checked).";
+            lines = SyncReport.Cap(lines, setLines);
             lines.Insert(0, summary);
             LastLines = lines;
             Plugin.Log.LogInfo(summary);
