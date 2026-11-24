@@ -1,38 +1,16 @@
 # Changelog
 
-## Unreleased (0.90.0, in development)
+## 0.90.0
 
-Not released. Config sync works for required mods, with per-mod choices in the menu and by command, and follows the
-author's label. A synced setting changed mid-session is put back.
+A much larger release than 0.12.0, hence the jump in number. NOTCH still checks every joining player's mods. It can
+now also make the settings of a server's required mods hold on each player's game for the session, and gives server
+managers the tools to control that. This release has the full feature set planned for 1.0; 1.0.0 will be this same
+code once it has been proven in real use.
 
-- **A synced setting stays synced.** If a synced setting is changed on a player's game while they are connected, NOTCH
-  sets it back to the server's value. It reacts only when a change happens; nothing is polled. Settings that are not
-  synced, or that the mod's author marked `NotchClient`, are the player's own and are left alone.
-- **Guard against a mod fighting over a setting (experimental).** If the same setting has to be put back 3 times
-  within 10 seconds, the server tells that player's game to stop putting it back and records it. The two numbers are
-  server settings (`RevertCount`, `RevertSeconds`), also in the menu. A game that does not acknowledge the stop within
-  30 seconds is dropped from the server. Each player's game also has a fixed limit of its own (20 in 10 seconds).
-  The menu's Server tab and `/notch config` list what was stopped, for whom, and why. The list is kept across
-  restarts until an admin removes the entries (in the menu, or `/notch-config-clear` for all of them).
-- **Menu notices.** The Mods tab shows a notice when settings have been stopped, beside the one for leftover files.
-  Each can be dismissed for now, or hidden with "Don't show again" until something new of that kind happens.
-- The player's log and report list at most 200 settings per join, problems first, then "and N more".
-- **Fixed:** a setting the player changed on a synced mod during a session (one that is not synced) was not written
-  to their config file on leaving. It is now.
+A server and its players need the same `NOTCH.dll`, so update both together. A player still on 0.12.0 can connect
+under the default policy, is told to update, and gets none of the new features.
 
-- **Author's label for config sync.** A mod maker can add `[assembly: AssemblyMetadata("NotchConfigSync", "...")]`:
-  `Self` (the mod syncs itself; NOTCH leaves it alone), `Notch` (use NOTCH's sync, even if the mod is not required)
-  or `Off` (never sync). `Self` and `Off` cannot be overridden by a server manager; a `Notch` mod can still be set to
-  warn or off. A mod with no label that carries a known sync library (ServerSync, Jotunn, CSync) is left alone.
-
-- **Per-mod config sync choice.** For each mod that has settings, a server manager can choose sync, warn or off, with
-  `/notch-config` or in the menu's Server tab. Kept in `BepInEx/config/NOTCH/config-sync.yaml`. `/notch config` lists
-  every mod with settings and what happens to it. Mods on the never-send list or marked client-only or server-only
-  in NOMNOM cannot be changed.
-- **Menu.** The Server tab has a new section with the catalogue's status, the size limit for a catalogue download, and
-  the per-mod table (closed until opened). It also shows the catalogue's size, when NOMNOM last changed it, and the
-  installed mods that have no catalogue entry. **Switching tabs with unapplied changes now asks first:** apply, discard or
-  stay.
+### New
 
 - **Config sync.** A server makes the settings of its required mods hold on every player's game while they are
   connected. The values are applied in memory when the player joins, before the map loads, and the player's own
@@ -43,7 +21,23 @@ author's label. A synced setting changed mid-session is put back.
 - **Protection against a hostile server.** A value is applied only to a setting the player's own copy of the mod
   has, of the same kind. A text setting only takes plain characters (letters, digits, spaces, hyphens, underscores,
   commas; 64 at most), so it cannot be given a link or a file path.
-
+- **Per-mod config sync choice.** For each mod that has settings, a server manager can choose sync, warn or off, with
+  `/notch-config` or in the menu's Server tab. Kept in `BepInEx/config/NOTCH/config-sync.yaml`. `/notch config` lists
+  every mod with settings and what happens to it. Mods on the never-send list or marked client-only or server-only
+  in NOMNOM cannot be changed.
+- **Author's label for config sync.** A mod maker can add `[assembly: AssemblyMetadata("NotchConfigSync", "...")]`:
+  `Self` (the mod syncs itself; NOTCH leaves it alone), `Notch` (use NOTCH's sync, even if the mod is not required)
+  or `Off` (never sync). `Self` and `Off` cannot be overridden by a server manager; a `Notch` mod can still be set to
+  warn or off. A mod with no label that carries a known sync library (ServerSync, Jotunn, CSync) is left alone.
+- **A synced setting stays synced.** If a synced setting is changed on a player's game while they are connected, NOTCH
+  sets it back to the server's value. It reacts only when a change happens; nothing is polled. Settings that are not
+  synced, or that the mod's author marked `NotchClient`, are the player's own and are left alone.
+- **Guard against a mod fighting over a setting (experimental).** If the same setting has to be put back 3 times
+  within 10 seconds, the server tells that player's game to stop putting it back and records it. The two numbers are
+  server settings (`RevertCount`, `RevertSeconds`), also in the menu. A game that does not acknowledge the stop within
+  30 seconds is dropped from the server. Each player's game also has a fixed limit of its own (20 in 10 seconds).
+  The menu's Server tab and `/notch config` list what was stopped, for whom, and why. The list is kept across
+  restarts until an admin removes the entries (in the menu, or `/notch-config-clear` for all of them).
 - **NOMNOM catalogue check.** A dedicated server, or a game while it hosts for other players, can read NOMNOM's
   public mod catalogue to learn whether a mod is meant for clients, servers or both. It runs in the background, at
   server start and then at intervals of no less than about an hour, and never while a player is only playing.
@@ -53,10 +47,28 @@ author's label. A synced setting changed mid-session is put back.
   console at every start until it is answered, in the config file or once in game with `/notch-notice`. The
   notice is also written to `BepInEx/config/NOTCH/NETWORK-ACCESS-NOTICE.txt`. If the notice ever changes, NOTCH
   asks again and can show what changed.
+- **Menu.** The Server tab has a new section with the catalogue's status, the size limit for a catalogue download, and
+  the per-mod table (closed until opened). It also shows the catalogue's size, when NOMNOM last changed it, and the
+  installed mods that have no catalogue entry. **Switching tabs with unapplied changes now asks first:** apply, discard or
+  stay.
+- **Menu notices.** The Mods tab shows a notice when settings have been stopped, beside the one for leftover files.
+  Each can be dismissed for now, or hidden with "Don't show again" until something new of that kind happens.
 - **Leftover copies of a mod.** When an old file is left beside the new one after an update, NOTCH no longer
   counts the copy BepInEx skipped, and warns about it in the server log and at the top of the menu's Mods tab.
+
+### Smaller changes
+
+- The player's log and report list at most 200 settings per join, problems first, then "and N more".
 - The join notice no longer ends with "You have joined — this is only a notice."
 - A mod unpacked into nested folders is now matched to its catalogue entry by any of those folders.
+- A change made by hand to `com.skyraze.notch.cfg` while NOTCH is running is picked up at the next server start,
+  mission load or join. It used to need a restart.
+- Works with Blueprinter 2.1.2 and later. Blueprinter's own settings are never synced.
+
+### Fixed
+
+- A setting the player changed on a synced mod during a session (one that is not synced) was not written
+  to their config file on leaving. It is now.
 
 ## 0.12.0
 

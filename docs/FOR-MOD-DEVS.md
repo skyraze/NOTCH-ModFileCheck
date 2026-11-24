@@ -13,12 +13,17 @@ mod behaves exactly the same where NOTCH is not installed.
 | "This mod is for the game client only" | `[BepInProcess("NuclearOption.exe")]` on your plugin class | [ClientOnlyPlugin.cs](../examples/ClientOnlyPlugin.cs) |
 | "Every player must have this mod" | `[assembly: AssemblyMetadata("NotchScope", "RequiresAll")]` | [RequiredPlugin.cs](../examples/RequiredPlugin.cs) |
 | "Older versions still work with this one" | `[assembly: AssemblyMetadata("NotchCompatibleFrom", "1.15")]` | [RequiredPlugin.cs](../examples/RequiredPlugin.cs) |
+| "Sync my settings with NOTCH, even if my mod is not required" | `[assembly: AssemblyMetadata("NotchConfigSync", "Notch")]` | [SyncedSettingsPlugin.cs](../examples/SyncedSettingsPlugin.cs) |
+| "I sync my own settings; leave them alone" | `[assembly: AssemblyMetadata("NotchConfigSync", "Self")]` | [NotchLabels.cs](../examples/NotchLabels.cs) |
+| "Never sync my settings" | `[assembly: AssemblyMetadata("NotchConfigSync", "Off")]` | [NotchLabels.cs](../examples/NotchLabels.cs) |
+| "This one setting belongs to the player" | the tag `"NotchClient"` on that setting | [SyncedSettingsPlugin.cs](../examples/SyncedSettingsPlugin.cs) |
 
-[NotchLabels.cs](../examples/NotchLabels.cs) is a drop-in file with both `[assembly: ...]` labels commented out:
+[NotchLabels.cs](../examples/NotchLabels.cs) is a drop-in file with the `[assembly: ...]` labels commented out:
 copy it into your project and uncomment the lines that apply.
 
 With no labels at all, nothing breaks. NOTCH assumes the mod is not required and that versions must be identical,
-and a server manager can change either for your mod themselves.
+and a server manager can change either for your mod themselves. If the mod is required, its settings are synced
+(see [Config sync](#config-sync-your-mods-settings)).
 
 ## Blueprinter
 
@@ -122,6 +127,89 @@ With this line in version 1.16, a server running 1.16 accepts players on 1.15 up
 - **Leave it out when in doubt.** Identical versions are the safe default, and a server manager can relax the
   check for your mod themselves.
 
+## Config sync: your mod's settings
+
+A server that runs NOTCH can make its values for a mod's settings hold on every player's game while they are
+connected. You don't have to build anything for this, and your mod never talks to NOTCH.
+
+**What NOTCH does.** When a player has passed the mod check, the server sends the values of the settings your
+plugin has declared with `Config.Bind`, as they are in the server's memory at that moment. The player's NOTCH
+sets them in memory, before the map loads. When the player leaves, their own values are put back. Nothing is
+written to the player's config file.
+
+**Which mods.** By default, mods that are [required on every client](#marking-a-mod-as-required-on-every-client),
+which includes Blueprinter content. A server manager can change that for any mod. A mod NOMNOM lists as
+client-only or server-only is never synced.
+
+### Saying how your settings should be treated
+
+One label, with three values. It goes in any one `.cs` file, outside the namespace, like the other labels:
+
+```csharp
+using System.Reflection;
+
+[assembly: AssemblyMetadata("NotchConfigSync", "Notch")]
+```
+
+| Value | Meaning | Can a server manager change it? |
+|---|---|---|
+| `Notch` | Sync my settings with NOTCH, even if my mod is not required. They go to the players who have the mod. | Yes: they can turn it down to warn or off |
+| `Self` | My mod syncs its own settings. NOTCH leaves them alone. | No |
+| `Off` | Never sync my settings. | No |
+
+With no label, NOTCH also looks for a sync library inside your mod or among the files it refers to (ServerSync,
+Jotunn or CSync, by name). If it finds one it leaves your settings alone, as if you had written `Self`. Write
+`Notch` if you want NOTCH's sync anyway. The label always wins over what NOTCH finds.
+
+The player's game reads the label on the player's own copy too: a copy labelled `Self` or `Off` is never touched,
+whatever a server sends.
+
+### Keeping one setting for the player
+
+Some settings belong to the player even in a synced mod: a key binding the player chose, a window position, a
+volume, a colour. Mark each with one extra word where you declare it:
+
+```csharp
+volume = Config.Bind("Sound", "Volume", 80,
+    new ConfigDescription("How loud the warning tone is.", null, "NotchClient"));
+```
+
+`"NotchClient"` is plain text in BepInEx's own list of tags for a setting. BepInEx and Configuration Manager
+ignore a tag they don't know, so the setting behaves and displays exactly as before. A setting with this tag is
+never sent by a server and never changed on a player's game.
+
+### Making your mod follow the server
+
+NOTCH can set a value. Only your mod can act on it.
+
+- **Read a setting when you use it** (`mySetting.Value` at the point of use). The server's value takes effect at
+  once.
+- **Or react to the change**: `mySetting.SettingChanged += (s, e) => Apply(mySetting.Value);`
+- **A value copied once in `Awake` will not follow the server.** Values arrive when the player joins, long after
+  start-up. The setting changes, and your copy doesn't.
+
+### What can and cannot be synced
+
+- Only settings declared on your plugin's own `Config`. A second config file your mod opens itself is not read.
+- A setting is applied only if the player's copy of your mod has the same section and key with the same type.
+  Anything else is skipped and listed in the player's report.
+- **Text settings only take plain characters:** letters, digits, spaces, hyphens, underscores and commas, 64
+  characters at most. This protects players from a hostile server; it is why a text setting can never be given a
+  link or a file path. A value with a full stop in it, such as `1.5` or a file name, is not applied. Numbers,
+  switches, list choices and key bindings are not affected. If a setting has to carry such text, tag it
+  `NotchClient` or label the mod `Self`.
+- Out-of-range values are adjusted by your own limits (`AcceptableValueRange` and the like), as always.
+- One mod's settings must fit in about 64,000 bytes when sent. That is a few thousand ordinary settings.
+
+### If your mod writes to its own settings
+
+- **While a player is connected, a synced setting that changes is put back** to the server's value. If your mod
+  keeps rewriting it, NOTCH notices the fight and stops putting that one setting back, and the server manager is
+  told which mod and setting it was. If your mod needs to own a setting, tag it `NotchClient`.
+- **Saving.** While a server's values are in your settings, NOTCH holds back writes to your config file, so the
+  server's values never reach the player's disk. A save your mod asks for is done once when the player leaves,
+  with the player's own values.
+
 ## Checking your labels
 
 Put your mod on a dedicated server that runs NOTCH and look at the server's BepInEx log after it starts:
@@ -129,7 +217,12 @@ Put your mod on a dedicated server that runs NOTCH and look at the server's BepI
 - a client-only mod shows `Detected <your mod> — client-only, not loaded on this server`;
 - a required mod is listed in `Required on every player's game: ...`;
 - an admin in game sees the same with `/notch required` and `/notch rules`, or in the Mods tab of `/notch-menu`
-  under "Author says".
+  under "Author says";
+- for config sync, `/notch config` and the table at the bottom of the menu's Server tab list your mod with what
+  happens to its settings and why: `sync (author asked for it)`, `off (author: syncs itself)`,
+  `off (author: never sync)` or `off (has its own sync (...))`. A mod that declares no settings is not listed;
+- a player's `BepInEx/NOTCH/notch-checks.yaml` lists each setting a server set, and any it could not, with the
+  reason.
 
 ## Not built yet
 

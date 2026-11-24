@@ -8,3 +8,9 @@ using System.Reflection;
 
 // This release also accepts players on older versions, from the one given here.
 // [assembly: AssemblyMetadata("NotchCompatibleFrom", "1.15")]
+
+// Config sync. Use ONE of these, or none. With none, a required mod's settings are synced by NOTCH.
+// "Notch" = sync my settings with NOTCH, even if my mod is not required.
+// "Self"  = my mod syncs its own settings; NOTCH leaves them alone.
+// "Off"   = never sync my settings.
+// [assembly: AssemblyMetadata("NotchConfigSync", "Notch")]
